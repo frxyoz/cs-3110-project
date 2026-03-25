@@ -6,4 +6,4 @@ Team Members:
 - Olric Zeng (yz3437)
 - Isabella Wu (ikw5)
 - Tran Tran (tnt54)
-- Ethan Nan (emn64)
+- Ethan Nan  (emn64)
