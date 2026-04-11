@@ -1,4 +1,4 @@
-let client_handler client_socket_address (client_in, client_out) =
+(* let client_handler client_socket_address (client_in, client_out) =
   let addr_str =
     match client_socket_address with
     | Unix.ADDR_INET (inet_addr, port) ->
@@ -26,4 +26,14 @@ let run_server () =
     let%lwt () = fst (Lwt.wait ()) in
     Lwt.return ()
   in
-  Lwt_main.run (server ())
+  Lwt_main.run (server ()) *)
+let () =
+  let print_usage () =
+    Printf.printf "Usage: %s <server | client>\n" Sys.argv.(0)
+  in
+  if Array.length Sys.argv < 2 then print_usage ()
+  else
+    match Sys.argv.(1) with
+    | "server" -> Server.run_server ()
+    | "client" -> Server.run_client ()
+    | _ -> print_usage ()
