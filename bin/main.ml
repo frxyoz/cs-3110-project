@@ -1,32 +1,33 @@
-(* let client_handler client_socket_address (client_in, client_out) =
-  let addr_str =
-    match client_socket_address with
-    | Unix.ADDR_INET (inet_addr, port) ->
-        Printf.sprintf "%s:%d" (Unix.string_of_inet_addr inet_addr) port
-    | _ -> "unknown"
-  in
-  let%lwt () = Lwt_io.printlf "I got a connection from %s." addr_str in
-  let%lwt () =
-    Lwt_io.fprintf client_out "You are connected.\n"
-  in
+type suit = Hearts | Diamonds | Clubs | Spades
 
-  (* IMPORTANT: flush so client actually receives it *)
-  let%lwt () = Lwt_io.flush client_out in
+type rank =
+  | Num of int  (* 2-10 *)
+  | Jack
+  | Queen
+  | King
+  | Ace
 
-  Lwt.return ()
+type color = Red | Black
 
-let run_server () =
-  let server () =
-    let%lwt () = Lwt_io.printlf "I am the server." in
-    let%lwt running_server =
-      Lwt_io.establish_server_with_client_address
-        (Unix.ADDR_INET (Unix.inet_addr_of_string "10.48.3.231", 5000))
-        client_handler
-    in
-    let%lwt () = fst (Lwt.wait ()) in
-    Lwt.return ()
-  in
-  Lwt_main.run (server ()) *)
+type card = {
+  rank : rank;
+  suit : suit;
+  color : color;
+}
+
+let color_of_suit = function
+  | Hearts | Diamonds -> Red
+  | Clubs | Spades -> Black
+
+let make_card rank suit =
+  { rank; suit; color = color_of_suit suit }
+
+let full_deck =
+  let suits = [Hearts; Diamonds; Clubs; Spades] in
+  let ranks = [Num 2; Num 3; Num 4; Num 5; Num 6; Num 7; Num 8; Num 9; Num 10;
+               Jack; Queen; King; Ace] in
+  List.concat_map (fun s -> List.map (fun r -> make_card r s) ranks) suits
+
 let () =
   let print_usage () =
     Printf.printf "Usage: %s <server | client>\n" Sys.argv.(0)
