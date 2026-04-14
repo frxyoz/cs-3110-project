@@ -1,20 +1,3 @@
-type suit = Hearts | Diamonds | Clubs | Spades
-
-type rank =
-  | Num of int  (* 2-10 *)
-  | Jack
-  | Queen
-  | King
-  | Ace
-
-type color = Red | Black
-
-type card = {
-  rank : rank;
-  suit : suit;
-  color : color;
-}
-
 let color_of_suit = function
   | Hearts | Diamonds -> Red
   | Clubs | Spades -> Black
