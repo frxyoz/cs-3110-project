@@ -18,7 +18,7 @@ type t = {
   discard : card list;
   status : status;
   turn : int;
-  round : round;
+  round : round option;
 }
 
 let make () =
@@ -28,7 +28,7 @@ let make () =
     discard = [];
     status = Waiting;
     turn = 0;
-    round = Judgment;
+    round = None;
   }
 
 let add_player (p : Player.t) (s : t) : (t, string) result =
@@ -68,5 +68,5 @@ let start_game (s : t) : t =
     deck = remaining_deck;
     discard = [];
     status = InProgress;
-    round = Action;
+    round = Some Action;
   }
