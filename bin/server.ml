@@ -34,10 +34,13 @@ let send_to client_out msg =
   let* () = Lwt_io.fprintlf client_out "%s" msg in
   Lwt_io.flush client_out
 
+(* keeps the server process alive so Lwt continues accepting connections *)
 let rec sleep_forever () =
   let* () = Lwt_unix.sleep 1000.0 in
   sleep_forever ()
 
+(* drives the active game: prompts the current player for a move, broadcasts
+   it, then advances the turn. exits when status reaches GameOver or Draw *)
 let rec game_loop () =
   let s = !game_state in
   match s.State.status with
@@ -80,6 +83,8 @@ let should_start_game () =
   n_ready >= 2 && n_ready = n_players
   && !game_state.State.status = State.Waiting
 
+(* called by Lwt for each new TCP connection; handles the full client
+   lifecycle: name entry -> lobby -> game. disconnects are caught at the bottom *)
 let client_handler client_socket_address (client_in, client_out) =
   Lwt.catch
     (fun () ->
