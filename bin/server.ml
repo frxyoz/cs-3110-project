@@ -39,16 +39,15 @@ let rec sleep_forever () =
   let* () = Lwt_unix.sleep 1000.0 in
   sleep_forever ()
 
-(* drives the active game: prompts the current player for a move, broadcasts
-   it, then advances the turn. exits when status reaches GameOver or Draw *)
+(* drives the active game: prompts the current player for a move, broadcasts it,
+   then advances the turn. exits when status reaches GameOver or Draw *)
 let rec game_loop () =
   let s = !game_state in
   match s.State.status with
   | State.GameOver winner ->
       broadcast_to_all (Printf.sprintf "Game over! %s wins!" winner.Player.name)
   | State.Draw -> broadcast_to_all "Game over! It's a draw!"
-  | State.Waiting ->
-      Lwt_io.printlf "Bug: game_loop called before game started."
+  | State.Waiting -> Lwt_io.printlf "Bug: game_loop called before game started."
   | State.InProgress -> (
       match State.current_player s with
       | None -> Lwt.return () (* unreachable: turn is always in bounds *)
@@ -75,16 +74,16 @@ let rec game_loop () =
               game_state := State.next_turn !game_state;
               game_loop ()))
 
-(* True when all connected players (>= 2) have said "yes" and the game
-   hasn't started yet. *)
+(* True when all connected players (>= 2) have said "yes" and the game hasn't
+   started yet. *)
 let should_start_game () =
   let n_ready = List.length !ready_ids in
   let n_players = List.length !game_state.State.players in
   n_ready >= 2 && n_ready = n_players
   && !game_state.State.status = State.Waiting
 
-(* called by Lwt for each new TCP connection; handles the full client
-   lifecycle: name entry -> lobby -> game. disconnects are caught at the bottom *)
+(* called by Lwt for each new TCP connection; handles the full client lifecycle:
+   name entry -> lobby -> game. disconnects are caught at the bottom *)
 let client_handler client_socket_address (client_in, client_out) =
   Lwt.catch
     (fun () ->
@@ -111,7 +110,8 @@ let client_handler client_socket_address (client_in, client_out) =
           let* () =
             broadcast_to_all
               (Printf.sprintf "%s joined! (%d/%d players)" name
-                 (List.length !game_state.State.players) State.max_players)
+                 (List.length !game_state.State.players)
+                 State.max_players)
           in
 
           (* Step 3: lobby — keep asking until the player commits *)
@@ -125,8 +125,8 @@ let client_handler client_socket_address (client_in, client_out) =
                 let n_players = List.length !game_state.State.players in
                 let* () =
                   broadcast_to_all
-                    (Printf.sprintf "%s is ready! (%d/%d ready)" name
-                       n_ready n_players)
+                    (Printf.sprintf "%s is ready! (%d/%d ready)" name n_ready
+                       n_players)
                 in
                 if should_start_game () then begin
                   (* This fiber starts the game and drives the game loop *)
@@ -135,7 +135,8 @@ let client_handler client_socket_address (client_in, client_out) =
                     broadcast_to_all "All players ready! Game starting..."
                   in
                   game_loop ()
-                end else begin
+                end
+                else begin
                   let remaining = n_players - n_ready in
                   let* () =
                     send_to client_out
@@ -156,8 +157,7 @@ let client_handler client_socket_address (client_in, client_out) =
                 let* () = send_to client_out "Please type 'yes' or 'no'." in
                 ask_ready ()
           in
-          ask_ready ()
-    )
+          ask_ready ())
     (* Catches I/O errors and clean disconnections *)
     (fun exn ->
       match
@@ -173,24 +173,27 @@ let client_handler client_socket_address (client_in, client_out) =
               !all_clients;
           (match exn with
           | End_of_file -> ()
-          | e ->
-              Printf.eprintf "Client error: %s\n%!" (Printexc.to_string e));
+          | e -> Printf.eprintf "Client error: %s\n%!" (Printexc.to_string e));
           if !game_state.State.status = State.InProgress then begin
-            (* Game requires all players to remain connected — end immediately *)
+            (* Game requires all players to remain connected — end
+               immediately *)
             game_state := { !game_state with State.status = State.Draw };
             broadcast_to_all
               (Printf.sprintf
                  "Game ended: %s disconnected. All players must remain \
-                  connected for the session." p.Player.name)
-          end else begin
+                  connected for the session."
+                 p.Player.name)
+          end
+          else begin
             (* Lobby: clean up their slot and ready vote *)
-            ready_ids :=
-              List.filter (fun rid -> rid <> p.Player.id) !ready_ids;
+            ready_ids := List.filter (fun rid -> rid <> p.Player.id) !ready_ids;
             game_state := State.remove_player p.Player.id !game_state;
             let* () =
               broadcast_to_all
-                (Printf.sprintf "%s left the lobby. (%d/%d players)" p.Player.name
-                   (List.length !game_state.State.players) State.max_players)
+                (Printf.sprintf "%s left the lobby. (%d/%d players)"
+                   p.Player.name
+                   (List.length !game_state.State.players)
+                   State.max_players)
             in
             if should_start_game () then begin
               game_state := State.start_game !game_state;
@@ -198,7 +201,8 @@ let client_handler client_socket_address (client_in, client_out) =
                 broadcast_to_all "All players ready! Game starting..."
               in
               game_loop ()
-            end else Lwt.return ()
+            end
+            else Lwt.return ()
           end)
 
 let run_server () =
