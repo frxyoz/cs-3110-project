@@ -6,6 +6,7 @@ type status =
   | Waiting (* waiting for more players/setup *)
   | InProgress
   | GameOver of Player.t (* winner *)
+  | Draw (* no last-standing player, dies same time *)
 
 type round =
   | Judgment
@@ -34,10 +35,13 @@ let make () =
 let add_player (p : Player.t) (s : t) : (t, string) result =
   match s.status with
   | InProgress -> Error "game already in progress"
-  | GameOver _ -> Error "game is over"
+  | GameOver _ | Draw -> Error "game is over"
   | Waiting ->
       if List.length s.players >= max_players then Error "game is full"
       else Ok { s with players = s.players @ [ p ] }
+
+let remove_player (id : int) (s : t) : t =
+  { s with players = List.filter (fun p -> p.Player.id <> id) s.players }
 
 let current_player (s : t) : Player.t option = List.nth_opt s.players s.turn
 
@@ -70,3 +74,10 @@ let start_game (s : t) : t =
     status = InProgress;
     round = Some Action;
   }
+
+let check_game_over (s : t) : t =
+  let alive = List.filter Player.is_alive s.players in
+  match alive with
+  | [ winner ] -> { s with status = GameOver winner }
+  | [] -> { s with status = Draw }
+  | _ -> s
