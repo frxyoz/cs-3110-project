@@ -22,6 +22,15 @@ type t = {
   round : round option;
 }
 
+(* Pending attack state for an attack, waiting for attacked player's response*)
+type pending_record = {
+  attacker : int;
+  target : int;
+  card : card;
+}
+
+type pending = pending_record option
+
 let make () =
   {
     players = [];
@@ -74,6 +83,14 @@ let start_game (s : t) : t =
     status = InProgress;
     round = Some Action;
   }
+
+(*Sets the attack as impending *)
+let set_pending (attacker : int) (target : int) (card : card) (s : t) : pending
+    =
+  Some { attacker; target; card }
+
+(* Clears the pending attack *)
+let clear_pending (_ : pending) : pending = None
 
 let check_game_over (s : t) : t =
   let alive = List.filter Player.is_alive s.players in

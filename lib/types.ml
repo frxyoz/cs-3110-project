@@ -22,3 +22,16 @@ type card = {
   suit : suit;
   color : color;
 }
+
+type card_type =
+  | BasicAttack
+  | BasicBlock
+  | BasicHeal
+  | Equipment
+  | Special
+
+type card_effect =
+  | Attack of int
+  | Block
+  | Heal of int
+  | NoEffect
