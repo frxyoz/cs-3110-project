@@ -41,6 +41,8 @@ let rec sleep_forever () =
 
 (* drives the active game: prompts the current player for a move, broadcasts it,
    then advances the turn. exits when status reaches GameOver or Draw *)
+(*TODO: Rewire to call rules.ml in order to simplify the game loop*)
+(*Change broadcasting to the actual implemented game logic, first you draw, then action round (prompt -> parse -> resolve_play -> broadcast result -> check pending -> advance turn), then the discard phase, then check if game over*)
 let rec game_loop () =
   let s = !game_state in
   match s.State.status with
