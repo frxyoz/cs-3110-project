@@ -34,6 +34,10 @@ let modify_lives (amt : int) (p : t) : t = set_lives (p.lives + amt) p
 let add_to_hand (card : card) (p : t) : t =
   if List.length p.hand >= p.lives then p else { p with hand = card :: p.hand }
 
+(* [force_add card p] adds [card] to [p]'s hand unconditionally.
+   Used by the draw phase, which already computes the correct draw count. *)
+let force_add (card : card) (p : t) : t = { p with hand = card :: p.hand }
+
 let remove_from_hand (card : card) (p : t) : t =
   let rec aux = function
     | [] -> []

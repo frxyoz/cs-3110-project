@@ -26,8 +26,8 @@ type t = {
   status : status;
   turn : int;
   round : round option;
-  (* Some during Action phase when an attack has been played and the target
-     has not yet responded. None means it is the active player's turn. *)
+  (* Some during Action phase when an attack has been played and the target has
+     not yet responded. None means it is the active player's turn. *)
   pending : pending_attack option;
   (* how many attacks the current player has used this round *)
   attacks_used : int;
@@ -68,13 +68,14 @@ let update_player (p : Player.t) (s : t) : t =
 
 let current_player (s : t) : Player.t option = List.nth_opt s.players s.turn
 
-(* Advances turn to the next alive player and resets the per-turn attack counter. *)
+(* Advances turn to the next alive player and resets the per-turn attack
+   counter. *)
 let next_turn (s : t) : t =
   let n = List.length s.players in
   { s with turn = (s.turn + 1) mod n; attacks_used = 0 }
 
-let set_pending (attacker_id : int) (target_id : int) (damage : int) (s : t) :
-    t =
+let set_pending (attacker_id : int) (target_id : int) (damage : int) (s : t) : t
+    =
   { s with pending = Some { attacker_id; target_id; damage } }
 
 let clear_pending (s : t) : t = { s with pending = None }
@@ -86,9 +87,7 @@ let start_game (s : t) : t =
     List.fold_left
       (fun (ps, deck) p ->
         let cards, deck' = Deck.deal 7 deck in
-        let p' =
-          List.fold_left (fun acc c -> Player.add_to_hand c acc) p cards
-        in
+        let p' = List.fold_left (fun acc c -> Player.force_add c acc) p cards in
         (ps @ [ p' ], deck'))
       ([], shuffled) s.players
   in
@@ -109,3 +108,35 @@ let check_game_over (s : t) : t =
   | [ winner ] -> { s with status = GameOver winner }
   | [] -> { s with status = Draw }
   | _ -> s
+
+(* Reshuffle the discard pile into the deck when the deck is empty. *)
+let reshuffle_if_empty (s : t) : t =
+  if s.deck = [] then { s with deck = Deck.shuffle s.discard; discard = [] }
+  else s
+
+(* Draw one card for [p], reshuffling first if needed. Returns the updated
+   player and state. *)
+let draw_one (p : Player.t) (s : t) : Player.t * t =
+  let s = reshuffle_if_empty s in
+  match s.deck with
+  | [] -> (p, s) (* deck exhausted even after reshuffle — no cards left *)
+  | card :: rest -> (Player.force_add card p, { s with deck = rest })
+
+(* Each alive player draws up to 2 cards, cant exceed their life total. *)
+let do_draw_phase (s : t) : t =
+  List.fold_left
+    (fun st p ->
+      if not (Player.is_alive p) then st
+      else
+        let to_draw =
+          min 2 (max 0 (p.Player.lives - List.length p.Player.hand))
+        in
+        let rec draw_n n (pl, state) =
+          if n = 0 then (pl, state)
+          else
+            let pl', state' = draw_one pl state in
+            draw_n (n - 1) (pl', state')
+        in
+        let p', st' = draw_n to_draw (p, st) in
+        update_player p' st')
+    s s.players
