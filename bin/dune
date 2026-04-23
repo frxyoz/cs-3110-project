@@ -1,5 +1,7 @@
 (executable
  (public_name cs-3110-project)
  (name main)
- (libraries cs_3110_project lwt lwt.unix unix)
+ (modules main server client)
+ (libraries cs_3110_project lwt lwt.unix unix threads.posix raylib)
  (preprocess (pps lwt_ppx)))
+ 

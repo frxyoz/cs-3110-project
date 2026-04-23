@@ -6,5 +6,6 @@ let () =
   else
     match Sys.argv.(1) with
     | "server" -> Server.run_server ()
-    | "client" -> Server.run_client ()
+    | "client" -> Client.run_client_gui ()
+    | "client-terminal" -> Server.run_client ()
     | _ -> print_usage ()
