@@ -1,31 +1,72 @@
 open Types
 
-(* Card type classification by suit and rank.
-   Suits: ♠ = attack, ♥ = block(2-5)/heal(6+), ♣ = special, ♦ = special
-   Aces are equip cards regardless of suit. *)
-let card_type_of_card (c : card) : card_type =
+(* Determine the special_type based on card rank/suit *)
+let special_type_of_card (c : card) : special_type option =
   match c.rank with
-  | Ace -> Equipment
-  | Jack | Queen | King -> Special
-  | Num _ -> (
+  | Num n -> (
       match c.suit with
-      | Spades -> BasicAttack
-      | Hearts -> (
-          match c.rank with
-          | Num n when n <= 5 -> BasicBlock
-          | _ -> BasicHeal)
-      | Clubs -> Special
-      | Diamonds -> Special)
+      | Clubs -> (
+          match n with
+          | 2 -> Some ArrowStorm
+          | 3 -> Some Chaos
+          | 4 -> Some GarbageDisposal
+          | 5 -> Some Diplomacy
+          | 6 -> Some LifeLock
+          | 7 -> Some Reduction
+          | 8 -> Some DoubleAgent
+          | 9 -> Some DeadMansGamble
+          | 10 -> Some SummonLightning
+          | _ -> None)
+      | Diamonds -> (
+          match n with
+          | 2 -> Some TwoToMax
+          | 3 -> Some Reflector
+          | 4 -> Some Silencer
+          | _ -> None)
+      | _ -> None)
+  | Jack -> Some Break
+  | Queen -> Some Steal
+  | King -> Some HealOrDoubleAttack
+  | _ -> None
 
-(* Effect produced when a card is played.
-   Attack cards deal 1 damage. Block cards negate an incoming attack.
-   Heal cards restore 1 life. All other cards produce NoEffect for now. *)
+(* Determine the equipment_type based on the Ace of each suit *)
+let equipment_type_of_card (c : card) : equipment_type option =
+  match c.rank with
+  | Ace -> (
+      match c.suit with
+      | Spades -> Some UnlimitedAttack
+      | Hearts -> Some BlockHealReverse
+      | Clubs -> Some Unblockable
+      | Diamonds -> Some Random50)
+  | _ -> None
+
+(* Card type classification by suit and rank. Suits: ♠ = attack, ♥ =
+   block(2-5)/heal(6+), ♣ = special, ♦ = special Aces are equip cards regardless
+   of suit. *)
+let card_type_of_card (c : card) : card_type =
+  match equipment_type_of_card c with
+  | Some eq_type -> Equipment eq_type
+  | None -> (
+      match special_type_of_card c with
+      | Some sp_type -> Special sp_type
+      | None -> (
+          match c.suit with
+          | Spades -> BasicAttack
+          | Hearts -> (
+              match c.rank with
+              | Num n when n <= 5 -> BasicBlock
+              | _ -> BasicHeal)
+          | Clubs | Diamonds -> BasicAttack (* fallback *)))
+
+(* Effect produced when a card is played. Attack cards deal 1 damage. Block
+   cards negate an incoming attack. Heal cards restore 1 life. All other cards
+   produce NoEffect for now. *)
 let effect_of_card (c : card) : card_effect =
   match card_type_of_card c with
   | BasicAttack -> Attack 1
   | BasicBlock -> Block
   | BasicHeal -> Heal 1
-  | Equipment | Special -> NoEffect
+  | Equipment _| Special _-> NoEffect
 
 (* Remove the first occurrence of a card from a list. *)
 let remove_card (c : card) (hand : card list) : card list =
