@@ -293,6 +293,153 @@ let card_raylib_color (c : Types.card) =
   | Types.Red -> Color.create 220 50 50 255
   | Types.Black -> Color.create 20 20 20 255
 
+let card_description (c : Types.card) : string list =
+  match c.Types.rank with
+  | Types.Ace -> (
+      match c.Types.suit with
+      | Types.Clubs ->
+          [ "EQUIP: 50/50"; "Half chance an attack"; "goes through (black=-1 life)" ]
+      | Types.Spades ->
+          [ "EQUIP: Unlimited attack"; "The 1 attack/round limit"; "does not apply to you" ]
+      | Types.Hearts ->
+          [ "EQUIP: Block/heal reverse"; "Use blocks as heals"; "and heals as blocks" ]
+      | Types.Diamonds ->
+          [ "EQUIP: Unblockable attacks"; "Cannot immediately respond"; "to attacks from you" ])
+  | Types.Jack -> [ "Break"; "Take someone's card + discard"; "Can break equips" ]
+  | Types.Queen -> [ "Steal"; "Take someone's card"; "+ add to your hand" ]
+  | Types.King -> [ "Heal / Double attack"; "(on the same person)" ]
+  | Types.Num n -> (
+      match c.Types.suit with
+      | Types.Spades -> [ "Attack"; "-1 life" ]
+      | Types.Hearts ->
+          if n <= 5 then [ "Block"; "Attack prevented" ] else [ "Heal"; "+1 life" ]
+      | Types.Clubs -> (
+          match n with
+          | 2 -> [ "Chaos"; "-1 life, blockable by an attack" ]
+          | 3 -> [ "Arrow storm"; "-1 life, blockable by a block" ]
+          | 4 -> [ "Garbage disposal"; "Top discard gets added to your hand" ]
+          | 5 ->
+              [
+                "Life lock";
+                "Gain/lose hearts together";
+                "Break by attacking each other";
+                "(both take life)";
+              ]
+          | 6 -> [ "Reduction"; "Discard all cards but basics" ]
+          | 7 | 8 ->
+              [ "Dead man's gamble"; "+1 life"; "If other DMG is played: -1 life" ]
+          | 9 | 10 ->
+              [ "2 to max"; "Get both cards to add"; "another heart to your max" ]
+          | _ -> [ "Special" ])
+      | Types.Diamonds -> (
+          match n with
+          | 2 -> [ "Say no"; "Doesn't work on lightning"; "or attacks" ]
+          | 3 -> [ "Reversify" ]
+          | 4 ->
+              [ "Diplomacy"; "Exchange cards with others"; "who join to gain a heart" ]
+          | 5 ->
+              [
+                "Draw 2";
+                "Draw 2 cards";
+                "Discard to life amount at end of round";
+              ]
+          | 6 ->
+              [
+                "Silencer";
+                "If blue is flipped,";
+                "you cannot play any cards in the round";
+              ]
+          | 7 ->
+              [
+                "Double agent";
+                "If blue is flipped, show your cards";
+                "to the person who placed double agent";
+              ]
+          | 8 ->
+              [
+                "Summon lightning";
+                "If judgement passes: -3 lives";
+                "Otherwise passed to next player";
+                "(like hot potato!)";
+              ]
+          | 9 -> [ "Reflector"; "Reflect the action,"; "but take a life" ]
+          | 10 -> [ "Sacrifice"; "-3 lives"; "+1 max heart level" ]
+          | _ -> [ "Special" ]))
+
+let draw_tooltip lines card_x card_y =
+  let font_size = 13 in
+  let line_h = 17 in
+  let pad = 8 in
+  let max_w =
+    List.fold_left (fun acc line -> max acc (measure_text line font_size)) 0 lines
+  in
+  let tw = max_w + (pad * 2) in
+  let th = (List.length lines * line_h) + (pad * 2) in
+  let tx = card_x + (card_w / 2) - (tw / 2) in
+  let ty = card_y - th - 6 in
+  let tx = max 4 (min tx (screen_w - tw - 4)) in
+  let ty = max 4 ty in
+  draw_rectangle tx ty tw th (Color.create 30 30 30 230);
+  draw_rectangle_lines tx ty tw th (Color.create 200 180 100 255);
+  List.iteri
+    (fun i line ->
+      draw_text line (tx + pad) (ty + pad + (i * line_h)) font_size
+        (Color.create 240 230 200 255))
+    lines
+
+(* Draw a suit symbol centered at (cx, cy) with the given size using primitives.
+   Avoids relying on Raylib's default ASCII-only bitmap font for Unicode glyphs. *)
+let draw_suit_symbol suit cx cy size col =
+  let h = size in
+  let w = size in
+  match suit with
+  | Types.Hearts ->
+      let r = h * 3 / 10 in
+      draw_circle (cx - r + 1) (cy - h / 6) (float_of_int r) col;
+      draw_circle (cx + r - 1) (cy - h / 6) (float_of_int r) col;
+      draw_triangle
+        (Vector2.create (float_of_int (cx + w / 2)) (float_of_int (cy - h / 6)))
+        (Vector2.create (float_of_int (cx - w / 2)) (float_of_int (cy - h / 6)))
+        (Vector2.create (float_of_int cx) (float_of_int (cy + h / 2)))
+        col
+  | Types.Diamonds ->
+      let hw = w / 2 in
+      let hh = h / 2 in
+      draw_triangle
+        (Vector2.create (float_of_int cx) (float_of_int (cy - hh)))
+        (Vector2.create (float_of_int (cx + hw)) (float_of_int cy))
+        (Vector2.create (float_of_int (cx - hw)) (float_of_int cy))
+        col;
+      draw_triangle
+        (Vector2.create (float_of_int cx) (float_of_int (cy + hh)))
+        (Vector2.create (float_of_int (cx - hw)) (float_of_int cy))
+        (Vector2.create (float_of_int (cx + hw)) (float_of_int cy))
+        col
+  | Types.Spades ->
+      let r = h * 3 / 10 in
+      draw_circle (cx - r + 1) (cy + h / 6) (float_of_int r) col;
+      draw_circle (cx + r - 1) (cy + h / 6) (float_of_int r) col;
+      draw_triangle
+        (Vector2.create (float_of_int (cx - w / 2)) (float_of_int (cy + h / 6)))
+        (Vector2.create (float_of_int (cx + w / 2)) (float_of_int (cy + h / 6)))
+        (Vector2.create (float_of_int cx) (float_of_int (cy - h / 2)))
+        col;
+      draw_rectangle (cx - 2) (cy + h / 3) 4 (h / 5) col
+  | Types.Clubs ->
+      let r = h / 4 in
+      draw_circle cx (cy - r / 2) (float_of_int r) col;
+      draw_circle (cx - r) (cy + r / 2) (float_of_int r) col;
+      draw_circle (cx + r) (cy + r / 2) (float_of_int r) col;
+      draw_rectangle (cx - 2) (cy + r) 4 (r + 3) col
+
+let rank_str (c : Types.card) =
+  match c.Types.rank with
+  | Types.Num n -> string_of_int n
+  | Types.Jack -> "J"
+  | Types.Queen -> "Q"
+  | Types.King -> "K"
+  | Types.Ace -> "A"
+
 let draw_card x y (c : Types.card) hovered =
   let bg =
     if hovered then Color.create 255 255 220 255
@@ -304,15 +451,12 @@ let draw_card x y (c : Types.card) hovered =
     draw_rectangle_lines (x + 1) (y + 1) (card_w - 2) (card_h - 2)
       (Color.create 200 160 0 255);
   let col = card_raylib_color c in
-  draw_text (string_of_card c) (x + 6) (y + 6) 18 col;
-  let suit_sym =
-    match c.Types.suit with
-    | Types.Hearts -> "♥"
-    | Types.Diamonds -> "♦"
-    | Types.Clubs -> "♣"
-    | Types.Spades -> "♠"
-  in
-  draw_text suit_sym (x + (card_w / 2) - 10) (y + (card_h / 2) - 12) 28 col
+  (* Top-left: rank label *)
+  draw_text (rank_str c) (x + 5) (y + 5) 18 col;
+  (* Small suit icon just below the rank in the corner *)
+  draw_suit_symbol c.Types.suit (x + 12) (y + 32) 14 col;
+  (* Large suit icon centered on the card face *)
+  draw_suit_symbol c.Types.suit (x + (card_w / 2)) (y + (card_h / 2)) 36 col
 
 (* Use Rules.card_type_of_card — no more string guessing *)
 let is_attack_card (c : Types.card) =
@@ -328,17 +472,20 @@ let draw_hand () =
   let interactive = waiting && pending = None in
   let mx = get_mouse_x () in
   let my = get_mouse_y () in
+  let hovered_info = ref None in
   List.iteri
     (fun i card ->
       let x = 20 + (i * (card_w + card_spacing)) in
-      let y = if waiting then hand_y else hand_y + 20 in
+      let base_y = if waiting then hand_y else hand_y + 20 in
       let hovered =
         interactive && mx >= x
         && mx <= x + card_w
-        && my >= y
-        && my <= y + card_h
+        && my >= base_y
+        && my <= base_y + card_h
       in
+      let y = if hovered then base_y - 12 else base_y in
       draw_card x y card hovered;
+      if hovered then hovered_info := Some (card, x, y);
       if hovered && is_mouse_button_pressed MouseButton.Left then
         begin if is_attack_card card then begin
           Mutex.lock view_mutex;
@@ -354,7 +501,10 @@ let draw_hand () =
           Mutex.unlock view_mutex
         end
         end)
-    hand
+    hand;
+  match !hovered_info with
+  | None -> ()
+  | Some (card, cx, cy) -> draw_tooltip (card_description card) cx cy
 
 (* Draw target selection overlay when an attack card has been clicked *)
 let draw_target_selection () =
