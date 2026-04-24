@@ -19,7 +19,7 @@
  (name cs-3110-project)
  (synopsis "A short synopsis")
  (description "A longer description")
- (depends ocaml)
+ (depends ocaml lwt lwt_ppx raylib)
  (tags
   ("add topics" "to describe" your project)))
 

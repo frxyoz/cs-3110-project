@@ -12,6 +12,9 @@ bug-reports: "https://github.com/username/reponame/issues"
 depends: [
   "dune" {>= "3.21"}
   "ocaml"
+  "lwt"
+  "lwt_ppx"
+  "raylib"
   "odoc" {with-doc}
 ]
 build: [
