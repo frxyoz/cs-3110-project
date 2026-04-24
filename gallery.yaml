@@ -1,0 +1,29 @@
+---
+# Members of your group.
+group:  
+  - name: Olric Zeng
+    netid: yz3437
+  - name: Tran Tran
+    netid: tnt54
+  - name: Isabella Wu
+    netid: ikw5
+  - name: Ethan Nan
+    netid: emn64
+  - name: Talus Leong
+    netid: tl952
+
+# Your PM.
+pm:
+  name: Oswald Tay
+  netid: owt5
+# Set to false if you don't want your gallery entry to be public.
+publish: true
+# Pithy title
+title: "Super Complicated Card Game"
+# OK if this is a Cornell Github link, but public gallery viewers won't be able to see it.
+git-repo: "https://github.com/frxyoz/super-complicated-card-game"
+# Replace the URL with your own demo video.
+demo-video-url: "https://youtu.be/s_ao5zsr6Ag"
+# Write a short, attention-grabbing description of your project.
+desc: >
+  Our project is a multiplayer card game engine built around a custom deck. Players compete to be the last one standing, each starting with 7 lives and 7 cards, where your life count dynamically caps how many cards you can hold. The game flows through structured rounds of drawing, a judgment phase (where card flips determine outcomes), and a free-form action phase where attacks, blocks, heals, and special cards with unique effects are used. Cards span basics like attacks and blocks, powerful equippables like Unlimited Attack or 50/50, and the unique and powerful judgement cards. 
