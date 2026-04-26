@@ -298,21 +298,39 @@ let card_description (c : Types.card) : string list =
   | Types.Ace -> (
       match c.Types.suit with
       | Types.Clubs ->
-          [ "EQUIP: 50/50"; "Half chance an attack"; "goes through (black=-1 life)" ]
+          [
+            "EQUIP: 50/50";
+            "Half chance an attack";
+            "goes through (black=-1 life)";
+          ]
       | Types.Spades ->
-          [ "EQUIP: Unlimited attack"; "The 1 attack/round limit"; "does not apply to you" ]
+          [
+            "EQUIP: Unlimited attack";
+            "The 1 attack/round limit";
+            "does not apply to you";
+          ]
       | Types.Hearts ->
-          [ "EQUIP: Block/heal reverse"; "Use blocks as heals"; "and heals as blocks" ]
+          [
+            "EQUIP: Block/heal reverse";
+            "Use blocks as heals";
+            "and heals as blocks";
+          ]
       | Types.Diamonds ->
-          [ "EQUIP: Unblockable attacks"; "Cannot immediately respond"; "to attacks from you" ])
-  | Types.Jack -> [ "Break"; "Take someone's card + discard"; "Can break equips" ]
+          [
+            "EQUIP: Unblockable attacks";
+            "Cannot immediately respond";
+            "to attacks from you";
+          ])
+  | Types.Jack ->
+      [ "Break"; "Take someone's card + discard"; "Can break equips" ]
   | Types.Queen -> [ "Steal"; "Take someone's card"; "+ add to your hand" ]
   | Types.King -> [ "Heal / Double attack"; "(on the same person)" ]
   | Types.Num n -> (
       match c.Types.suit with
       | Types.Spades -> [ "Attack"; "-1 life" ]
       | Types.Hearts ->
-          if n <= 5 then [ "Block"; "Attack prevented" ] else [ "Heal"; "+1 life" ]
+          if n <= 5 then [ "Block"; "Attack prevented" ]
+          else [ "Heal"; "+1 life" ]
       | Types.Clubs -> (
           match n with
           | 2 -> [ "Chaos"; "-1 life, blockable by an attack" ]
@@ -327,16 +345,26 @@ let card_description (c : Types.card) : string list =
               ]
           | 6 -> [ "Reduction"; "Discard all cards but basics" ]
           | 7 | 8 ->
-              [ "Dead man's gamble"; "+1 life"; "If other DMG is played: -1 life" ]
+              [
+                "Dead man's gamble";
+                "+1 life";
+                "If other DMG is played: -1 life";
+              ]
           | 9 | 10 ->
-              [ "2 to max"; "Get both cards to add"; "another heart to your max" ]
+              [
+                "2 to max"; "Get both cards to add"; "another heart to your max";
+              ]
           | _ -> [ "Special" ])
       | Types.Diamonds -> (
           match n with
           | 2 -> [ "Say no"; "Doesn't work on lightning"; "or attacks" ]
           | 3 -> [ "Reversify" ]
           | 4 ->
-              [ "Diplomacy"; "Exchange cards with others"; "who join to gain a heart" ]
+              [
+                "Diplomacy";
+                "Exchange cards with others";
+                "who join to gain a heart";
+              ]
           | 5 ->
               [
                 "Draw 2";
@@ -371,7 +399,9 @@ let draw_tooltip lines card_x card_y =
   let line_h = 17 in
   let pad = 8 in
   let max_w =
-    List.fold_left (fun acc line -> max acc (measure_text line font_size)) 0 lines
+    List.fold_left
+      (fun acc line -> max acc (measure_text line font_size))
+      0 lines
   in
   let tw = max_w + (pad * 2) in
   let th = (List.length lines * line_h) + (pad * 2) in
@@ -383,24 +413,31 @@ let draw_tooltip lines card_x card_y =
   draw_rectangle_lines tx ty tw th (Color.create 200 180 100 255);
   List.iteri
     (fun i line ->
-      draw_text line (tx + pad) (ty + pad + (i * line_h)) font_size
+      draw_text line (tx + pad)
+        (ty + pad + (i * line_h))
+        font_size
         (Color.create 240 230 200 255))
     lines
 
 (* Draw a suit symbol centered at (cx, cy) with the given size using primitives.
-   Avoids relying on Raylib's default ASCII-only bitmap font for Unicode glyphs. *)
+   Avoids relying on Raylib's default ASCII-only bitmap font for Unicode
+   glyphs. *)
 let draw_suit_symbol suit cx cy size col =
   let h = size in
   let w = size in
   match suit with
   | Types.Hearts ->
       let r = h * 3 / 10 in
-      draw_circle (cx - r + 1) (cy - h / 6) (float_of_int r) col;
-      draw_circle (cx + r - 1) (cy - h / 6) (float_of_int r) col;
+      draw_circle (cx - r + 1) (cy - (h / 6)) (float_of_int r) col;
+      draw_circle (cx + r - 1) (cy - (h / 6)) (float_of_int r) col;
       draw_triangle
-        (Vector2.create (float_of_int (cx + w / 2)) (float_of_int (cy - h / 6)))
-        (Vector2.create (float_of_int (cx - w / 2)) (float_of_int (cy - h / 6)))
-        (Vector2.create (float_of_int cx) (float_of_int (cy + h / 2)))
+        (Vector2.create
+           (float_of_int (cx + (w / 2)))
+           (float_of_int (cy - (h / 6))))
+        (Vector2.create
+           (float_of_int (cx - (w / 2)))
+           (float_of_int (cy - (h / 6))))
+        (Vector2.create (float_of_int cx) (float_of_int (cy + (h / 2))))
         col
   | Types.Diamonds ->
       let hw = w / 2 in
@@ -417,19 +454,23 @@ let draw_suit_symbol suit cx cy size col =
         col
   | Types.Spades ->
       let r = h * 3 / 10 in
-      draw_circle (cx - r + 1) (cy + h / 6) (float_of_int r) col;
-      draw_circle (cx + r - 1) (cy + h / 6) (float_of_int r) col;
+      draw_circle (cx - r + 1) (cy + (h / 6)) (float_of_int r) col;
+      draw_circle (cx + r - 1) (cy + (h / 6)) (float_of_int r) col;
       draw_triangle
-        (Vector2.create (float_of_int (cx - w / 2)) (float_of_int (cy + h / 6)))
-        (Vector2.create (float_of_int (cx + w / 2)) (float_of_int (cy + h / 6)))
-        (Vector2.create (float_of_int cx) (float_of_int (cy - h / 2)))
+        (Vector2.create
+           (float_of_int (cx - (w / 2)))
+           (float_of_int (cy + (h / 6))))
+        (Vector2.create
+           (float_of_int (cx + (w / 2)))
+           (float_of_int (cy + (h / 6))))
+        (Vector2.create (float_of_int cx) (float_of_int (cy - (h / 2))))
         col;
-      draw_rectangle (cx - 2) (cy + h / 3) 4 (h / 5) col
+      draw_rectangle (cx - 2) (cy + (h / 3)) 4 (h / 5) col
   | Types.Clubs ->
       let r = h / 4 in
-      draw_circle cx (cy - r / 2) (float_of_int r) col;
-      draw_circle (cx - r) (cy + r / 2) (float_of_int r) col;
-      draw_circle (cx + r) (cy + r / 2) (float_of_int r) col;
+      draw_circle cx (cy - (r / 2)) (float_of_int r) col;
+      draw_circle (cx - r) (cy + (r / 2)) (float_of_int r) col;
+      draw_circle (cx + r) (cy + (r / 2)) (float_of_int r) col;
       draw_rectangle (cx - 2) (cy + r) 4 (r + 3) col
 
 let rank_str (c : Types.card) =
