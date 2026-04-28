@@ -216,6 +216,7 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                   else
                     let s' =
                       State.apply_card actor_id c s
+                      |> State.apply_card actor_id partner
                       |> modify_actor actor_id (Player.set_max_lives 1)
                     in
                     Ok
