@@ -140,3 +140,12 @@ let do_draw_phase (s : t) : t =
         let p', st' = draw_n to_draw (p, st) in
         update_player p' st')
     s s.players
+
+let onto_discard (c : Types.card) (s : t) : t = { s with discard = c :: s.discard }
+
+let apply_card (actor_id : int) (c : Types.card) (s : t) : t =
+  match find_player actor_id s with
+  | None -> s
+  | Some actor ->
+    let actor' = Player.remove_from_hand c actor in
+    onto_discard c (update_player actor' s)

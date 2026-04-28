@@ -42,3 +42,5 @@ val check_game_over : t -> t
 val reshuffle_if_empty : t -> t
 val draw_one : Player.t -> t -> Player.t * t
 val do_draw_phase : t -> t
+val onto_discard : Types.card -> t -> t
+val apply_card : int -> Types.card -> t -> t
