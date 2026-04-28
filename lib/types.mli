@@ -38,15 +38,19 @@ and special_type =
   | Chaos
   | ArrowStorm
   | GarbageDisposal
-  | Diplomacy
   | LifeLock
   | Reduction
-  | DoubleAgent
   | DeadMansGamble
-  | Silencer
-  | SummonLightning
   | TwoToMax
+  | SayNo
+  | Reversify
+  | Diplomacy
+  | Draw2
+  | Silencer
+  | DoubleAgent
+  | SummonLightning
   | Reflector
+  | Sacrifice
   | Steal
   | Break
   | HealOrDoubleAttack

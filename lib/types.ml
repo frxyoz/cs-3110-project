@@ -37,21 +37,25 @@ and equipment_type =
   | Unblockable
 
 and special_type =
-  | Chaos (* -1 life, blockable by attack *)
-  | ArrowStorm (* -1 life, blockable by block *)
-  | GarbageDisposal (* Top discard → hand *)
-  | Diplomacy (* Exchange cards on join *)
-  | LifeLock (* Shared life pool *)
-  | Reduction (* Discard non-basics *)
-  | DoubleAgent (* Reveal hand if flipped *)
-  | DeadMansGamble (* Pair bonus: +1 max life *)
-  | Silencer (* Can't play cards this round *)
-  | SummonLightning (* Judgment: 3 damage if passes *)
-  | TwoToMax (* Pair bonus: +1 max life *)
-  | Reflector (* Bounce action, -1 life *)
-  | Steal
-  | Break
-  | HealOrDoubleAttack
+  | Chaos (* 2♣: -1 life, blockable by attack *)
+  | ArrowStorm (* 3♣: -1 life, blockable by block *)
+  | GarbageDisposal (* 4♣: top discard → hand *)
+  | LifeLock (* 5♣: shared life pool *)
+  | Reduction (* 6♣: target discards all non-basics *)
+  | DeadMansGamble (* 7♣/8♣: +1 life; pair → -1 life instead *)
+  | TwoToMax (* 9♣/10♣: collect both → +1 max life *)
+  | SayNo (* 2♦: negate a card *)
+  | Reversify (* 3♦: reverse an effect *)
+  | Diplomacy (* 4♦: exchange cards; gain a life *)
+  | Draw2 (* 5♦: draw 2 cards *)
+  | Silencer (* 6♦: judgment — black → target can't play this round *)
+  | DoubleAgent (* 7♦: judgment — black → reveal hand *)
+  | SummonLightning (* 8♦: judgment — black → -3 lives, hot potato if red *)
+  | Reflector (* 9♦: bounce action back, -1 life *)
+  | Sacrifice (* 10♦: -3 lives, +1 max lives *)
+  | Steal (* Q: take card from someone's hand *)
+  | Break (* J: discard a card from someone's hand; breaks equips *)
+  | HealOrDoubleAttack (* K: +1 life OR attack same person twice *)
 
 type card_effect =
   | Attack of int

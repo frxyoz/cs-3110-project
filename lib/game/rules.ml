@@ -2,31 +2,28 @@ open Types
 
 (* Determine the special_type based on card rank/suit *)
 let special_type_of_card (c : card) : special_type option =
-  match c.rank with
-  | Num n -> (
-      match c.suit with
-      | Clubs -> (
-          match n with
-          | 2 -> Some ArrowStorm
-          | 3 -> Some Chaos
-          | 4 -> Some GarbageDisposal
-          | 5 -> Some Diplomacy
-          | 6 -> Some LifeLock
-          | 7 -> Some Reduction
-          | 8 -> Some DoubleAgent
-          | 9 -> Some DeadMansGamble
-          | 10 -> Some SummonLightning
-          | _ -> None)
-      | Diamonds -> (
-          match n with
-          | 2 -> Some TwoToMax
-          | 3 -> Some Reflector
-          | 4 -> Some Silencer
-          | _ -> None)
-      | _ -> None)
-  | Jack -> Some Break
-  | Queen -> Some Steal
-  | King -> Some HealOrDoubleAttack
+  match (c.rank, c.suit) with
+  | Num 2, Clubs -> Some Chaos
+  | Num 3, Clubs -> Some ArrowStorm
+  | Num 4, Clubs -> Some GarbageDisposal
+  | Num 5, Clubs -> Some LifeLock
+  | Num 6, Clubs -> Some Reduction
+  | Num 7, Clubs -> Some DeadMansGamble
+  | Num 8, Clubs -> Some DeadMansGamble
+  | Num 9, Clubs -> Some TwoToMax
+  | Num 10, Clubs -> Some TwoToMax
+  | Num 2, Diamonds -> Some SayNo
+  | Num 3, Diamonds -> Some Reversify
+  | Num 4, Diamonds -> Some Diplomacy
+  | Num 5, Diamonds -> Some Draw2
+  | Num 6, Diamonds -> Some Silencer
+  | Num 7, Diamonds -> Some DoubleAgent
+  | Num 8, Diamonds -> Some SummonLightning
+  | Num 9, Diamonds -> Some Reflector
+  | Num 10, Diamonds -> Some Sacrifice
+  | Jack, _ -> Some Break
+  | Queen, _ -> Some Steal
+  | King, _ -> Some HealOrDoubleAttack
   | _ -> None
 
 (* Determine the equipment_type based on the Ace of each suit *)
@@ -145,7 +142,10 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                         apply_card actor_id c s
                         |> State.set_pending actor_id tid dmg
                         |> fun st ->
-                        { st with State.attacks_used = st.State.attacks_used + 1 }
+                        {
+                          st with
+                          State.attacks_used = st.State.attacks_used + 1;
+                        }
                       in
                       Ok
                         ( s',
@@ -155,7 +155,9 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                             actor_id tid tid )
                 end
           | Heal amt ->
-              let actor' = get_player actor_id |> spend c |> Player.modify_lives amt in
+              let actor' =
+                get_player actor_id |> spend c |> Player.modify_lives amt
+              in
               let s' = s |> State.update_player actor' |> onto_discard c in
               Ok
                 ( s',
