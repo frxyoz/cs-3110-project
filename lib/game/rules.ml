@@ -84,7 +84,6 @@ let remove_card (c : card) (hand : card list) : card list =
    only the target may respond with a Block or by taking the damage (Pass) *)
 let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
     (s : State.t) : (State.t * string, string) result =
-  (* Helpers to keep the match arms readable. *)
   let get_player id =
     match State.find_player id s with
     | Some pl -> pl
@@ -92,6 +91,10 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
   in
   let spend c pl = { pl with Player.hand = remove_card c pl.Player.hand } in
   let onto_discard c st = { st with State.discard = c :: st.State.discard } in
+  let apply_card id c st =
+    let actor = get_player id in
+    st |> State.update_player (spend c actor) |> onto_discard c
+  in
   match s.State.pending with
   (* ── Pending attack: only the designated target may respond ── *)
   | Some p when p.State.target_id = actor_id -> (
@@ -99,12 +102,7 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
       | Turn.Play c -> (
           match effect_of_card c with
           | Block ->
-              let actor = get_player actor_id in
-              let s' =
-                s
-                |> State.update_player (spend c actor)
-                |> onto_discard c |> State.clear_pending
-              in
+              let s' = apply_card actor_id c s |> State.clear_pending in
               Ok (s', Printf.sprintf "Player %d blocked the attack!" actor_id)
           | _ ->
               Error
@@ -132,9 +130,6 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
   | None -> (
       match action with
       | Turn.Play c ->
-          let actor = get_player actor_id in
-          (* Wrap in begin..end so the inner match doesn't swallow the outer
-             arms. *)
           begin match effect_of_card c with
           | Attack dmg ->
               if s.State.attacks_used >= 1 then
@@ -147,15 +142,10 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                       Error "Target player not found."
                     else
                       let s' =
-                        s
-                        |> State.update_player (spend c actor)
-                        |> onto_discard c
+                        apply_card actor_id c s
                         |> State.set_pending actor_id tid dmg
                         |> fun st ->
-                        {
-                          st with
-                          State.attacks_used = st.State.attacks_used + 1;
-                        }
+                        { st with State.attacks_used = st.State.attacks_used + 1 }
                       in
                       Ok
                         ( s',
@@ -165,10 +155,8 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                             actor_id tid tid )
                 end
           | Heal amt ->
-              let actor' = Player.modify_lives amt actor in
-              let s' =
-                s |> State.update_player (spend c actor') |> onto_discard c
-              in
+              let actor' = get_player actor_id |> spend c |> Player.modify_lives amt in
+              let s' = s |> State.update_player actor' |> onto_discard c in
               Ok
                 ( s',
                   Printf.sprintf "Player %d healed! (%d lives remaining)"
@@ -177,7 +165,6 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
           | NoEffect -> Error "That card has no effect yet."
           end
       | Turn.Discard c ->
-          let actor = get_player actor_id in
-          let s' = s |> State.update_player (spend c actor) |> onto_discard c in
+          let s' = apply_card actor_id c s in
           Ok (s', Printf.sprintf "Player %d discarded a card." actor_id)
       | Turn.Pass -> Ok (s, Printf.sprintf "Player %d passed." actor_id))
