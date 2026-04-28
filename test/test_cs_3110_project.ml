@@ -48,7 +48,13 @@ let with_pending aid tid dmg s =
   {
     s with
     State.pending =
-      Some { State.attacker_id = aid; target_id = tid; damage = dmg };
+      Some
+        {
+          State.attacker_id = aid;
+          target_id = tid;
+          damage = dmg;
+          block_with = State.ByBlock;
+        };
   }
 
 (* ── common cards ── *)
@@ -56,7 +62,10 @@ let with_pending aid tid dmg s =
 (* basic *)
 let atk = mk_card (Types.Num 2) Types.Spades (* BasicAttack *)
 let blk = mk_card (Types.Num 2) Types.Hearts (* BasicBlock *)
-let blk5 = mk_card (Types.Num 5) Types.Hearts (* BasicBlock — highest block rank *)
+
+let blk5 =
+  mk_card (Types.Num 5) Types.Hearts (* BasicBlock — highest block rank *)
+
 let heal = mk_card (Types.Num 6) Types.Hearts (* BasicHeal — lowest heal rank *)
 let heal10 = mk_card (Types.Num 10) Types.Hearts (* BasicHeal *)
 
@@ -161,9 +170,7 @@ let tests =
          ( "remove from hand only removes first occurrence" >:: fun _ ->
            let p = Player.make_player 1 "Alice" in
            let card = List.nth Deck.full_deck 0 in
-           let p =
-             { p with Player.hand = [ card; card; card ] }
-           in
+           let p = { p with Player.hand = [ card; card; card ] } in
            let p' = Player.remove_from_hand card p in
            assert_equal ~printer:string_of_int 2 (List.length p'.Player.hand) );
          (* ── Deck ── *)
@@ -247,7 +254,8 @@ let tests =
          ( "onto_discard does not change players or deck" >:: fun _ ->
            let s = two_player_game () in
            let s' = State.onto_discard atk s in
-           assert_equal (List.length s.State.players)
+           assert_equal
+             (List.length s.State.players)
              (List.length s'.State.players);
            assert_equal (List.length s.State.deck) (List.length s'.State.deck)
          );
@@ -287,8 +295,8 @@ let tests =
            assert_equal (Some Types.DeadMansGamble)
              (Rules.special_type_of_card club8) );
          ( "9♣ is TwoToMax" >:: fun _ ->
-           assert_equal (Some Types.TwoToMax)
-             (Rules.special_type_of_card club9) );
+           assert_equal (Some Types.TwoToMax) (Rules.special_type_of_card club9)
+         );
          ( "10♣ is TwoToMax" >:: fun _ ->
            assert_equal (Some Types.TwoToMax)
              (Rules.special_type_of_card club10) );
@@ -304,8 +312,8 @@ let tests =
          ( "5♦ is Draw2" >:: fun _ ->
            assert_equal (Some Types.Draw2) (Rules.special_type_of_card diam5) );
          ( "6♦ is Silencer" >:: fun _ ->
-           assert_equal (Some Types.Silencer)
-             (Rules.special_type_of_card diam6) );
+           assert_equal (Some Types.Silencer) (Rules.special_type_of_card diam6)
+         );
          ( "7♦ is DoubleAgent" >:: fun _ ->
            assert_equal (Some Types.DoubleAgent)
              (Rules.special_type_of_card diam7) );
@@ -364,25 +372,22 @@ let tests =
            assert_equal Types.BasicHeal (Rules.card_type_of_card heal);
            assert_equal Types.BasicHeal (Rules.card_type_of_card heal10) );
          ( "Ace is Equipment" >:: fun _ ->
-           assert_equal
-             (Types.Equipment Types.UnlimitedAttack)
+           assert_equal (Types.Equipment Types.UnlimitedAttack)
              (Rules.card_type_of_card ace_s) );
          ( "Clubs number is Special" >:: fun _ ->
-           assert_equal (Types.Special Types.Chaos) (Rules.card_type_of_card club2)
-         );
+           assert_equal (Types.Special Types.Chaos)
+             (Rules.card_type_of_card club2) );
          ( "Diamonds number is Special" >:: fun _ ->
-           assert_equal
-             (Types.Special Types.Reversify)
+           assert_equal (Types.Special Types.Reversify)
              (Rules.card_type_of_card diam3) );
          ( "Jack is Special Break" >:: fun _ ->
-           assert_equal (Types.Special Types.Break) (Rules.card_type_of_card jack)
-         );
+           assert_equal (Types.Special Types.Break)
+             (Rules.card_type_of_card jack) );
          ( "Queen is Special Steal" >:: fun _ ->
-           assert_equal (Types.Special Types.Steal) (Rules.card_type_of_card queen)
-         );
+           assert_equal (Types.Special Types.Steal)
+             (Rules.card_type_of_card queen) );
          ( "King is Special HealOrDoubleAttack" >:: fun _ ->
-           assert_equal
-             (Types.Special Types.HealOrDoubleAttack)
+           assert_equal (Types.Special Types.HealOrDoubleAttack)
              (Rules.card_type_of_card king) );
          (* ── Rules: effect_of_card ── *)
          ( "BasicAttack produces Attack 1" >:: fun _ ->
@@ -402,17 +407,29 @@ let tests =
          (* ── Rules: resolve_action — normal turn ── *)
          ( "play attack sets pending" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ atk ] in
-           let s', _ = ok_or_fail (Rules.resolve_action 1 (Turn.Play atk) (Some 2) s) in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play atk) (Some 2) s)
+           in
            assert_equal
-             (Some { State.attacker_id = 1; target_id = 2; damage = 1 })
+             (Some
+                {
+                  State.attacker_id = 1;
+                  target_id = 2;
+                  damage = 1;
+                  block_with = State.ByBlock;
+                })
              s'.State.pending );
          ( "play attack increments attacks_used" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ atk ] in
-           let s', _ = ok_or_fail (Rules.resolve_action 1 (Turn.Play atk) (Some 2) s) in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play atk) (Some 2) s)
+           in
            assert_equal ~printer:string_of_int 1 s'.State.attacks_used );
          ( "play attack removes card from hand" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ atk ] in
-           let s', _ = ok_or_fail (Rules.resolve_action 1 (Turn.Play atk) (Some 2) s) in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play atk) (Some 2) s)
+           in
            let p1 = get_player 1 s' in
            assert_equal ~printer:string_of_int 0 (List.length p1.Player.hand) );
          ( "play attack without target returns error" >:: fun _ ->
@@ -435,16 +452,22 @@ let tests =
            let s =
              two_player_game () |> set_hand 1 [ heal ] |> set_player_lives 1 5
            in
-           let s', _ = ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s) in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
+           in
            let p1 = get_player 1 s' in
            assert_equal ~printer:string_of_int 6 p1.Player.lives );
          ( "play heal discards the card" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ heal ] in
-           let s', _ = ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s) in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
+           in
            assert_equal heal (List.hd s'.State.discard) );
          ( "play heal removes card from hand" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ heal ] in
-           let s', _ = ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s) in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
+           in
            let p1 = get_player 1 s' in
            assert_equal ~printer:string_of_int 0 (List.length p1.Player.hand) );
          ( "play block with no pending returns error" >:: fun _ ->
@@ -477,17 +500,13 @@ let tests =
            assert_equal s.State.discard s'.State.discard );
          (* ── Rules: resolve_action — pending attack ── *)
          ( "non-target cannot act while attack is pending" >:: fun _ ->
-           let s =
-             two_player_game () |> with_pending 1 2 1
-           in
+           let s = two_player_game () |> with_pending 1 2 1 in
            match Rules.resolve_action 1 Turn.Pass None s with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
          ( "target can block pending attack" >:: fun _ ->
            let s =
-             two_player_game ()
-             |> set_hand 2 [ blk ]
-             |> with_pending 1 2 1
+             two_player_game () |> set_hand 2 [ blk ] |> with_pending 1 2 1
            in
            let s', _ =
              ok_or_fail (Rules.resolve_action 2 (Turn.Play blk) None s)
@@ -495,9 +514,7 @@ let tests =
            assert_equal None s'.State.pending );
          ( "blocking clears the pending attack" >:: fun _ ->
            let s =
-             two_player_game ()
-             |> set_hand 2 [ blk ]
-             |> with_pending 1 2 1
+             two_player_game () |> set_hand 2 [ blk ] |> with_pending 1 2 1
            in
            let s', _ =
              ok_or_fail (Rules.resolve_action 2 (Turn.Play blk) None s)
@@ -505,9 +522,7 @@ let tests =
            assert_equal None s'.State.pending );
          ( "blocking discards the block card" >:: fun _ ->
            let s =
-             two_player_game ()
-             |> set_hand 2 [ blk ]
-             |> with_pending 1 2 1
+             two_player_game () |> set_hand 2 [ blk ] |> with_pending 1 2 1
            in
            let s', _ =
              ok_or_fail (Rules.resolve_action 2 (Turn.Play blk) None s)
@@ -515,9 +530,7 @@ let tests =
            assert_equal blk (List.hd s'.State.discard) );
          ( "target passing takes damage" >:: fun _ ->
            let s =
-             two_player_game ()
-             |> set_player_lives 2 5
-             |> with_pending 1 2 1
+             two_player_game () |> set_player_lives 2 5 |> with_pending 1 2 1
            in
            let s', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s) in
            let p2 = get_player 2 s' in
@@ -528,9 +541,7 @@ let tests =
            assert_equal None s'.State.pending );
          ( "target passing to 0 lives triggers game over" >:: fun _ ->
            let s =
-             two_player_game ()
-             |> set_player_lives 2 1
-             |> with_pending 1 2 1
+             two_player_game () |> set_player_lives 2 1 |> with_pending 1 2 1
            in
            let s', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s) in
            match s'.State.status with
@@ -538,18 +549,14 @@ let tests =
            | _ -> assert_failure "expected GameOver" );
          ( "target cannot discard while attack is pending" >:: fun _ ->
            let s =
-             two_player_game ()
-             |> set_hand 2 [ atk ]
-             |> with_pending 1 2 1
+             two_player_game () |> set_hand 2 [ atk ] |> with_pending 1 2 1
            in
            match Rules.resolve_action 2 (Turn.Discard atk) None s with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
          ( "target playing non-block returns error" >:: fun _ ->
            let s =
-             two_player_game ()
-             |> set_hand 2 [ heal ]
-             |> with_pending 1 2 1
+             two_player_game () |> set_hand 2 [ heal ] |> with_pending 1 2 1
            in
            match Rules.resolve_action 2 (Turn.Play heal) None s with
            | Error _ -> ()

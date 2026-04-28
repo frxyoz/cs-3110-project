@@ -13,10 +13,25 @@ type round =
   | Action
   | Discard
 
+(* How the pending attack can be countered *)
+type block_type =
+  | ByBlock (* normal attacks — respond with a Block card *)
+  | ByAttack (* Chaos — respond with an Attack card *)
+
 type pending_attack = {
   attacker_id : int;
   target_id : int;
   damage : int;
+  block_with : block_type;
+}
+
+(* Tracks an in-flight Dead Man's Gamble waiting for partner holders to
+   respond *)
+type pending_dmg = {
+  dmg_actor_id : int;
+  played_card : Types.card;
+  waiting_on : int list;
+  any_triggered : bool;
 }
 
 type t = {
@@ -29,6 +44,9 @@ type t = {
   (* Some during Action phase when an attack has been played and the target has
      not yet responded. None means it is the active player's turn. *)
   pending : pending_attack option;
+  (* Some when a Dead Man's Gamble was played and partner holders haven't
+     responded yet. *)
+  pending_dmg : pending_dmg option;
   (* how many attacks the current player has used this round *)
   attacks_used : int;
 }
@@ -42,6 +60,7 @@ let make () =
     turn = 0;
     round = None;
     pending = None;
+    pending_dmg = None;
     attacks_used = 0;
   }
 
@@ -74,9 +93,9 @@ let next_turn (s : t) : t =
   let n = List.length s.players in
   { s with turn = (s.turn + 1) mod n; attacks_used = 0 }
 
-let set_pending (attacker_id : int) (target_id : int) (damage : int) (s : t) : t
-    =
-  { s with pending = Some { attacker_id; target_id; damage } }
+let set_pending (attacker_id : int) (target_id : int) (damage : int)
+    (block_with : block_type) (s : t) : t =
+  { s with pending = Some { attacker_id; target_id; damage; block_with } }
 
 let clear_pending (s : t) : t = { s with pending = None }
 
@@ -99,6 +118,7 @@ let start_game (s : t) : t =
     status = InProgress;
     round = Some Action;
     pending = None;
+    pending_dmg = None;
     attacks_used = 0;
   }
 
@@ -141,11 +161,58 @@ let do_draw_phase (s : t) : t =
         update_player p' st')
     s s.players
 
-let onto_discard (c : Types.card) (s : t) : t = { s with discard = c :: s.discard }
+let onto_discard (c : Types.card) (s : t) : t =
+  { s with discard = c :: s.discard }
 
 let apply_card (actor_id : int) (c : Types.card) (s : t) : t =
   match find_player actor_id s with
   | None -> s
   | Some actor ->
-    let actor' = Player.remove_from_hand c actor in
-    onto_discard c (update_player actor' s)
+      let actor' = Player.remove_from_hand c actor in
+      onto_discard c (update_player actor' s)
+
+(* ── Dead Man's Gamble helpers ── *)
+
+let set_pending_dmg (actor_id : int) (played_card : Types.card)
+    (holders : int list) (s : t) : t =
+  {
+    s with
+    pending_dmg =
+      Some
+        {
+          dmg_actor_id = actor_id;
+          played_card;
+          waiting_on = holders;
+          any_triggered = false;
+        };
+  }
+
+let dmg_respond (responder_id : int) (played : bool) (s : t) : t =
+  match s.pending_dmg with
+  | None -> s
+  | Some pdmg ->
+      let waiting_on' =
+        List.filter (fun id -> id <> responder_id) pdmg.waiting_on
+      in
+      {
+        s with
+        pending_dmg =
+          Some
+            {
+              pdmg with
+              waiting_on = waiting_on';
+              any_triggered = pdmg.any_triggered || played;
+            };
+      }
+
+(* Call once waiting_on is empty to apply the +1/-1 life to the actor. *)
+let resolve_dmg (s : t) : t =
+  match s.pending_dmg with
+  | None -> s
+  | Some pdmg -> (
+      let s' = { s with pending_dmg = None } in
+      match find_player pdmg.dmg_actor_id s' with
+      | None -> s'
+      | Some actor ->
+          let delta = if pdmg.any_triggered then -1 else 1 in
+          update_player (Player.modify_lives delta actor) s' |> check_game_over)

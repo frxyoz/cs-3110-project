@@ -11,10 +11,22 @@ type round =
   | Action
   | Discard
 
+type block_type =
+  | ByBlock
+  | ByAttack
+
 type pending_attack = {
   attacker_id : int;
   target_id : int;
   damage : int;
+  block_with : block_type;
+}
+
+type pending_dmg = {
+  dmg_actor_id : int;
+  played_card : Types.card;
+  waiting_on : int list;
+  any_triggered : bool;
 }
 
 type t = {
@@ -25,6 +37,7 @@ type t = {
   turn : int;
   round : round option;
   pending : pending_attack option;
+  pending_dmg : pending_dmg option;
   attacks_used : int;
 }
 
@@ -35,7 +48,7 @@ val find_player : int -> t -> Player.t option
 val update_player : Player.t -> t -> t
 val current_player : t -> Player.t option
 val next_turn : t -> t
-val set_pending : int -> int -> int -> t -> t
+val set_pending : int -> int -> int -> block_type -> t -> t
 val clear_pending : t -> t
 val start_game : t -> t
 val check_game_over : t -> t
@@ -44,3 +57,6 @@ val draw_one : Player.t -> t -> Player.t * t
 val do_draw_phase : t -> t
 val onto_discard : Types.card -> t -> t
 val apply_card : int -> Types.card -> t -> t
+val set_pending_dmg : int -> Types.card -> int list -> t -> t
+val dmg_respond : int -> bool -> t -> t
+val resolve_dmg : t -> t
