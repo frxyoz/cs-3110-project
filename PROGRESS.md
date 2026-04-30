@@ -12,11 +12,14 @@
   - **Chaos (2♣)** — sets `ByAttack` pending (countered by an Attack card, not a Block)
   - **TwoToMax (9♣ / 10♣)** — requires both cards in hand; auto-discards both and raises `max_lives` by 1
   - **DeadMansGamble (7♣ / 8♣)** — if no partner holders: immediate +1 life; if holders exist: sets `pending_dmg`, holders must respond with partner card (−1 life to actor) or pass (no trigger); multi-holder support with `any_triggered` flag
+  - **SayNo (2♦)** — opens a response window that negates eligible cards
+  - **Diplomacy (4♦)** — lets other players join with a card to gain 1 life, then resolves the exchange
+  - **Draw2 (5♦)** — opens a Say No window after the draw effect is played
 - Implemented `resolve_action` for **Jokers**: Black Joker (AOE −1) and Red Joker (AOE +1)
 - Added 153 unit tests (all passing) covering Player, Deck, State, and the above Rules logic
 
 ### What is NOT yet implemented (pick up from here)
-- `resolve_action` for all **diamonds specials**: SayNo (2♦), Reversify (3♦), Diplomacy (4♦), Draw2 (5♦), Silencer (6♦), DoubleAgent (7♦), SummonLightning (8♦), Reflector (9♦), Sacrifice (10♦)
+- `resolve_action` for remaining **diamonds specials**: Reversify (3♦), Silencer (6♦), DoubleAgent (7♦), SummonLightning (8♦), Reflector (9♦), Sacrifice (10♦)
 - `resolve_action` for **clubs 4–6**: GarbageDisposal (4♣), LifeLock (5♣), Reduction (6♣)
 - `resolve_action` for **face cards**: Jack (Break), Queen (Steal), King (Heal or Double Attack)
 - **Equipment resolve**: equipping Aces, UnlimitedAttack bypassing `attacks_used`, BlockHealReverse swapping block↔heal, Unblockable preventing instant response, Random50 50/50 flip
