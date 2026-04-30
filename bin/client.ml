@@ -104,7 +104,7 @@ let string_of_card (c : Types.card) =
       | Types.Queen -> "Q"
       | Types.King -> "K"
       | Types.Ace -> "A"
-      | Types.Joker -> assert false
+      | Types.Joker -> "JKR"
     in
     let suit_str =
       match c.Types.suit with
@@ -224,6 +224,18 @@ let update_view_from_line line =
   (* Game is starting *)
   if line = "All players ready! Game starting..." then current_screen := InGame;
   (* Detect action-phase prompts — the prompt block contains "> " *)
+  if String.length line > 7 && String.sub line 0 7 = "Others:" then begin
+    let rest = String.trim (String.sub line 7 (String.length line - 7)) in
+    let entries = String.split_on_char ',' rest in
+    view.players <-
+      List.filter_map
+        (fun entry ->
+          let entry = String.trim entry in
+          match String.index_opt entry ' ' with
+          | None -> if entry = "" then None else Some entry
+          | Some i -> Some (String.sub entry 0 i))
+        entries
+  end;
   let contains_prompt s =
     let needle = "> " in
     let nl = String.length needle in
@@ -239,27 +251,7 @@ let update_view_from_line line =
   if contains_prompt line then begin
     view.prompt <- line;
     view.waiting_for_input <- true;
-    view.pending_attack <- None;
-    (* Parse "Others: Alice (7 hp), Bob (5 hp)" from the prompt block. The
-       prompt is one big string with \n embedded. *)
-    let sublines = String.split_on_char '\n' line in
-    List.iter
-      (fun sl ->
-        let sl = String.trim sl in
-        if String.length sl > 7 && String.sub sl 0 7 = "Others:" then begin
-          let rest = String.trim (String.sub sl 7 (String.length sl - 7)) in
-          (* Each entry is "Name (N hp)" separated by ", " *)
-          let entries = String.split_on_char ',' rest in
-          view.players <-
-            List.filter_map
-              (fun entry ->
-                let entry = String.trim entry in
-                match String.index_opt entry ' ' with
-                | None -> if entry = "" then None else Some entry
-                | Some i -> Some (String.sub entry 0 i))
-              entries
-        end)
-      sublines
+    view.pending_attack <- None
   end;
   Mutex.unlock view_mutex
 
@@ -333,6 +325,7 @@ let card_description (c : Types.card) : string list =
       [ "Break"; "Take someone's card + discard"; "Can break equips" ]
   | Types.Queen -> [ "Steal"; "Take someone's card"; "+ add to your hand" ]
   | Types.King -> [ "Heal / Double attack"; "(on the same person)" ]
+  | Types.Joker -> [ "Unimplemented" ]
   | Types.Num n -> (
       match c.Types.suit with
       | Types.Spades -> [ "Attack"; "-1 life" ]
@@ -488,6 +481,7 @@ let rank_str (c : Types.card) =
   | Types.Queen -> "Q"
   | Types.King -> "K"
   | Types.Ace -> "A"
+  | Types.Joker -> "JKR"
 
 let draw_card x y (c : Types.card) hovered =
   let bg =
