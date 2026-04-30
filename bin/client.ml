@@ -328,7 +328,6 @@ let card_description (c : Types.card) : string list =
       [ "Break"; "Take someone's card + discard"; "Can break equips" ]
   | Types.Queen -> [ "Steal"; "Take someone's card"; "+ add to your hand" ]
   | Types.King -> [ "Heal / Double attack"; "(on the same person)" ]
-  | Types.Joker -> [ "Unimplemented" ]
   | Types.Num n -> (
       match c.Types.suit with
       | Types.Spades -> [ "Attack"; "-1 life" ]
