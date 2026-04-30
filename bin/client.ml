@@ -56,6 +56,10 @@ let view : game_view =
 let parse_card token =
   let n = String.length token in
   if n < 2 then None
+  else if token = "BJ" then
+    Some { Types.rank = Types.Joker; suit = Types.Spades; color = Types.Black }
+  else if token = "RJ" then
+    Some { Types.rank = Types.Joker; suit = Types.Hearts; color = Types.Red }
   else
     let suit_char = token.[n - 1] in
     let rank_str = String.sub token 0 (n - 1) in
@@ -90,22 +94,26 @@ let parse_card token =
 
 (* Render a Types.card back to a short display string like "7S", "AH" *)
 let string_of_card (c : Types.card) =
-  let rank_str =
-    match c.Types.rank with
-    | Types.Num n -> string_of_int n
-    | Types.Jack -> "J"
-    | Types.Queen -> "Q"
-    | Types.King -> "K"
-    | Types.Ace -> "A"
-  in
-  let suit_str =
-    match c.Types.suit with
-    | Types.Hearts -> "H"
-    | Types.Diamonds -> "D"
-    | Types.Clubs -> "C"
-    | Types.Spades -> "S"
-  in
-  rank_str ^ suit_str
+  if c.Types.rank = Types.Joker then
+    if c.Types.color = Types.Black then "BJ" else "RJ"
+  else
+    let rank_str =
+      match c.Types.rank with
+      | Types.Num n -> string_of_int n
+      | Types.Jack -> "J"
+      | Types.Queen -> "Q"
+      | Types.King -> "K"
+      | Types.Ace -> "A"
+      | Types.Joker -> assert false
+    in
+    let suit_str =
+      match c.Types.suit with
+      | Types.Hearts -> "H"
+      | Types.Diamonds -> "D"
+      | Types.Clubs -> "C"
+      | Types.Spades -> "S"
+    in
+    rank_str ^ suit_str
 
 let view_mutex = Mutex.create ()
 

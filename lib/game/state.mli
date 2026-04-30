@@ -29,6 +29,18 @@ type pending_dmg = {
   any_triggered : bool;
 }
 
+type pending_sayno_effect =
+  | Heal of int
+  | TwoToMax of Types.card
+  | DeadMansGamble of Types.card * int list
+  | Diplomacy of (int * Types.card) list
+
+type pending_sayno = {
+  source_id : int;
+  waiting_on : int list;
+  resolution : pending_sayno_effect;
+}
+
 type t = {
   players : Player.t list;
   deck : Types.card list;
@@ -38,6 +50,7 @@ type t = {
   round : round option;
   pending : pending_attack option;
   pending_dmg : pending_dmg option;
+  pending_sayno : pending_sayno option;
   attacks_used : int;
 }
 
@@ -60,3 +73,7 @@ val apply_card : int -> Types.card -> t -> t
 val set_pending_dmg : int -> Types.card -> int list -> t -> t
 val dmg_respond : int -> bool -> t -> t
 val resolve_dmg : t -> t
+val set_pending_sayno : int -> pending_sayno_effect -> int list -> t -> t
+val sayno_respond : int -> bool -> t -> t
+val diplomacy_join : int -> Types.card -> t -> t
+val resolve_sayno : t -> t

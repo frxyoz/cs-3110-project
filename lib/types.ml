@@ -12,6 +12,7 @@ type rank =
   | Queen
   | King
   | Ace
+  | Joker
 
 type color =
   | Red
@@ -53,6 +54,8 @@ and special_type =
   | SummonLightning (* 8♦: judgment — black → -3 lives, hot potato if red *)
   | Reflector (* 9♦: bounce action back, -1 life *)
   | Sacrifice (* 10♦: -3 lives, +1 max lives *)
+  | BlackJoker (* black joker: AOE -1 *)
+  | RedJoker (* red joker: AOE +1 *)
   | Steal (* Q: take card from someone's hand *)
   | Break (* J: discard a card from someone's hand; breaks equips *)
   | HealOrDoubleAttack (* K: +1 life OR attack same person twice *)

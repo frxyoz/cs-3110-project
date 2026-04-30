@@ -27,7 +27,14 @@ let full_deck =
       Ace;
     ]
   in
-  List.concat_map (fun s -> List.map (fun r -> make_card r s) ranks) suits
+  let standard =
+    List.concat_map (fun s -> List.map (fun r -> make_card r s) ranks) suits
+  in
+  standard
+  @ [
+      { rank = Joker; suit = Spades; color = Black };
+      { rank = Joker; suit = Hearts; color = Red };
+    ]
 
 (** [deal] returns (cards given to player, remaining deck) *)
 let deal (n : int) (deck : card list) : card list * card list =

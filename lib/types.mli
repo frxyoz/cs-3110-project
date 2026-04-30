@@ -10,6 +10,7 @@ type rank =
   | Queen
   | King
   | Ace
+  | Joker
 
 type color =
   | Red
@@ -51,6 +52,8 @@ and special_type =
   | SummonLightning
   | Reflector
   | Sacrifice
+  | BlackJoker
+  | RedJoker
   | Steal
   | Break
   | HealOrDoubleAttack

@@ -24,6 +24,7 @@ let special_type_of_card (c : card) : special_type option =
   | Jack, _ -> Some Break
   | Queen, _ -> Some Steal
   | King, _ -> Some HealOrDoubleAttack
+  | Joker, _ -> if c.color = Black then Some BlackJoker else Some RedJoker
   | _ -> None
 
 (* Determine the equipment_type based on the Ace of each suit *)
@@ -65,6 +66,17 @@ let effect_of_card (c : card) : card_effect =
   | Special ArrowStorm -> Attack 1
   | Equipment _ | Special _ -> NoEffect
 
+let apply_aoe_life (delta : int) (s : State.t) : State.t =
+  List.fold_left
+    (fun st p ->
+      if Player.is_alive p then
+        match State.find_player p.Player.id st with
+        | None -> st
+        | Some player ->
+            State.update_player (Player.modify_lives delta player) st
+      else st)
+    s s.State.players
+
 (* Returns the partner TwoToMax card: 9♣ ↔ 10♣ *)
 let other_twotomax_card (c : card) : card =
   match c.rank with
@@ -92,11 +104,12 @@ let counter_name : State.block_type -> string = function
   | State.ByBlock -> "Block"
   | State.ByAttack -> "Attack"
 
-(* Apply [f] to player [id] in [s]. No-op if the player is not found. *)
-let modify_actor (id : int) (f : Player.t -> Player.t) (s : State.t) : State.t =
-  match State.find_player id s with
-  | None -> s
-  | Some a -> State.update_player (f a) s
+let alive_other_players (actor_id : int) (s : State.t) : int list =
+  List.filter_map
+    (fun p ->
+      if p.Player.id <> actor_id && Player.is_alive p then Some p.Player.id
+      else None)
+    s.State.players
 
 (* Check the attack limit and target, then create a pending attack. [msg tid]
    formats the success message given the resolved target id. *)
@@ -120,12 +133,6 @@ let execute_attack (actor_id : int) (c : card) (target_id : int option)
             in
             Ok (s', msg tid))
 
-(* resolve_action actor_id action target_id state Resolves one player action and
-   returns (new_state, message) or an error.
-
-   Priority order for pending state checks: 1. pending_dmg — out-of-turn DMG
-   response window 2. pending — attack response (target must block or pass) 3.
-   None — normal turn *)
 let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
     (s : State.t) : (State.t * string, string) result =
   let ( let* ) = Result.bind in
@@ -134,7 +141,6 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
     | Some pl -> Ok pl
     | None -> Error (Printf.sprintf "player %d not found" id)
   in
-  (* Once all waiting_on players have responded, apply the life change. *)
   let finalize_dmg msg s' =
     match s'.State.pending_dmg with
     | Some p when p.State.waiting_on = [] ->
@@ -146,7 +152,198 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
               msg p.State.dmg_actor_id outcome )
     | _ -> Ok (s', msg)
   in
-  (* ── Dead Man's Gamble pending: out-of-turn response window ── *)
+  let start_sayno c resolution msg =
+    let waiting_on = alive_other_players actor_id s in
+    let s' =
+      State.apply_card actor_id c s
+      |> State.set_pending_sayno actor_id resolution waiting_on
+    in
+    match s'.State.pending_sayno with
+    | Some p when p.State.waiting_on = [] -> Ok (State.resolve_sayno s', msg)
+    | _ -> Ok (s', msg)
+  in
+  let rec handle_normal_turn () =
+    match action with
+    | Turn.Play c -> (
+        match card_type_of_card c with
+        | Special SayNo -> Error "Say No can only be played as a response."
+        | Special Chaos ->
+            execute_attack actor_id c target_id 1 State.ByAttack
+              (fun tid ->
+                Printf.sprintf
+                  "Player %d played Chaos on player %d! Player %d must respond \
+                   with an Attack card or pass."
+                  actor_id tid tid)
+              s
+        | Special TwoToMax ->
+            let* actor = get_player actor_id in
+            let partner = other_twotomax_card c in
+            if not (List.mem partner actor.Player.hand) then
+              Error
+                "You need both TwoToMax cards (9♣ and 10♣) in hand to use this \
+                 effect."
+            else
+              start_sayno c (TwoToMax partner)
+                (Printf.sprintf
+                   "Player %d played TwoToMax. Waiting for Say No responses."
+                   actor_id)
+        | Special DeadMansGamble ->
+            let holders =
+              List.filter_map
+                (fun p ->
+                  if
+                    p.Player.id <> actor_id
+                    && List.mem (dmg_partner_card c) p.Player.hand
+                  then Some p.Player.id
+                  else None)
+                s.State.players
+            in
+            start_sayno c
+              (DeadMansGamble (c, holders))
+              (Printf.sprintf
+                 "Player %d played Dead Man's Gamble. Waiting for Say No \
+                  responses."
+                 actor_id)
+        | Special Diplomacy ->
+            start_sayno c (Diplomacy [])
+              (Printf.sprintf
+                 "Player %d played Diplomacy. Waiting for responses." actor_id)
+        | Special BlackJoker ->
+            let s' =
+              State.apply_card actor_id c s
+              |> apply_aoe_life (-1) |> State.onto_discard c
+              |> State.check_game_over
+            in
+            Ok
+              ( s',
+                Printf.sprintf
+                  "Player %d played the black joker: all players lose 1 life."
+                  actor_id )
+        | Special RedJoker ->
+            let s' =
+              State.apply_card actor_id c s
+              |> apply_aoe_life 1 |> State.onto_discard c
+              |> State.check_game_over
+            in
+            Ok
+              ( s',
+                Printf.sprintf
+                  "Player %d played the red joker: all players gain 1 life."
+                  actor_id )
+        | _ -> (
+            match effect_of_card c with
+            | Attack dmg ->
+                execute_attack actor_id c target_id dmg State.ByBlock
+                  (fun tid ->
+                    Printf.sprintf
+                      "Player %d attacked player %d! Player %d must block or \
+                       pass."
+                      actor_id tid tid)
+                  s
+            | Heal amt ->
+                start_sayno c (Heal amt)
+                  (Printf.sprintf
+                     "Player %d played a heal. Waiting for Say No responses."
+                     actor_id)
+            | Block -> Error "No attack is pending — nothing to block."
+            | NoEffect -> Error "That card has no effect yet."))
+    | Turn.Discard c ->
+        Ok
+          ( State.apply_card actor_id c s,
+            Printf.sprintf "Player %d discarded a card." actor_id )
+    | Turn.Pass -> Ok (s, Printf.sprintf "Player %d passed." actor_id)
+  in
+  let rec handle_sayno_window () =
+    match s.State.pending_sayno with
+    | Some p when p.State.waiting_on = [] ->
+        Ok (State.resolve_sayno s, "Pending Say No resolved.")
+    | Some p when List.mem actor_id p.State.waiting_on -> (
+        match action with
+        | Turn.Play c ->
+            if
+              p.State.resolution = Diplomacy []
+              ||
+              match p.State.resolution with
+              | Diplomacy _ -> true
+              | _ -> false
+            then
+              if card_type_of_card c = Special SayNo then
+                let s' =
+                  State.apply_card actor_id c s |> fun st ->
+                  { st with State.pending_sayno = None }
+                in
+                Ok (s', Printf.sprintf "Player %d said no!" actor_id)
+              else
+                let s' =
+                  State.apply_card actor_id c s
+                  |> State.diplomacy_join actor_id c
+                in
+                match s'.State.pending_sayno with
+                | Some p when p.State.waiting_on = [] ->
+                    Ok
+                      ( State.resolve_sayno s',
+                        Printf.sprintf
+                          "Player %d joined Diplomacy and the window closed."
+                          actor_id )
+                | _ ->
+                    Ok
+                      (s', Printf.sprintf "Player %d joined Diplomacy." actor_id)
+            else if card_type_of_card c = Special SayNo then
+              let s' =
+                State.apply_card actor_id c s |> fun st ->
+                { st with State.pending_sayno = None }
+              in
+              Ok (s', Printf.sprintf "Player %d said no!" actor_id)
+            else Error "You can only play Say No or pass during this response."
+        | Turn.Pass -> (
+            let s' = State.sayno_respond actor_id false s in
+            match s'.State.pending_sayno with
+            | Some p when p.State.waiting_on = [] ->
+                Ok
+                  ( State.resolve_sayno s',
+                    Printf.sprintf "Player %d passed on Say No." actor_id )
+            | _ -> Ok (s', Printf.sprintf "Player %d passed on Say No." actor_id)
+            )
+        | Turn.Discard _ -> Error "Cannot discard during a Say No response.")
+    | Some p ->
+        Error
+          (Printf.sprintf "Waiting for player %d to respond to Say No."
+             p.State.source_id)
+    | None -> handle_attack_or_turn ()
+  and handle_attack_or_turn () =
+    match s.State.pending with
+    | Some p when p.State.target_id = actor_id -> (
+        match action with
+        | Turn.Play c ->
+            if can_counter (effect_of_card c) p.State.block_with then
+              let s' = State.apply_card actor_id c s |> State.clear_pending in
+              Ok (s', Printf.sprintf "Player %d blocked the attack!" actor_id)
+            else
+              Error
+                (Printf.sprintf
+                   "You can only play a %s card in response to this attack, or \
+                    Pass to take the damage."
+                   (counter_name p.State.block_with))
+        | Turn.Pass ->
+            let* target = get_player actor_id in
+            let target' = Player.modify_lives (-p.State.damage) target in
+            let s' =
+              s
+              |> State.update_player target'
+              |> State.clear_pending |> State.check_game_over
+            in
+            Ok
+              ( s',
+                Printf.sprintf "Player %d took %d damage! (%d lives remaining)"
+                  actor_id p.State.damage target'.Player.lives )
+        | Turn.Discard _ ->
+            Error "Cannot discard while an attack is pending — block or pass.")
+    | Some p ->
+        Error
+          (Printf.sprintf "Waiting for player %d to respond to the attack."
+             p.State.target_id)
+    | None -> handle_normal_turn ()
+  in
   match s.State.pending_dmg with
   | Some pdmg when List.mem actor_id pdmg.State.waiting_on -> (
       let partner_card = dmg_partner_card pdmg.State.played_card in
@@ -166,131 +363,4 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
       | Turn.Discard _ ->
           Error "Cannot discard during a Dead Man's Gamble response.")
   | Some _ -> Error "Waiting for Dead Man's Gamble responses."
-  | None -> (
-      (* ── Pending attack: only the designated target may respond ── *)
-      match s.State.pending with
-      | Some p when p.State.target_id = actor_id -> (
-          match action with
-          | Turn.Play c ->
-              if can_counter (effect_of_card c) p.State.block_with then
-                let s' = State.apply_card actor_id c s |> State.clear_pending in
-                Ok (s', Printf.sprintf "Player %d blocked the attack!" actor_id)
-              else
-                Error
-                  (Printf.sprintf
-                     "You can only play a %s card in response to this attack, \
-                      or Pass to take the damage."
-                     (counter_name p.State.block_with))
-          | Turn.Pass ->
-              let* target = get_player actor_id in
-              let target' = Player.modify_lives (-p.State.damage) target in
-              let s' =
-                s
-                |> State.update_player target'
-                |> State.clear_pending |> State.check_game_over
-              in
-              Ok
-                ( s',
-                  Printf.sprintf
-                    "Player %d took %d damage! (%d lives remaining)" actor_id
-                    p.State.damage target'.Player.lives )
-          | Turn.Discard _ ->
-              Error "Cannot discard while an attack is pending — block or pass."
-          )
-      | Some p ->
-          Error
-            (Printf.sprintf "Waiting for player %d to respond to the attack."
-               p.State.target_id)
-      (* ── Normal turn ── *)
-      | None -> (
-          match action with
-          | Turn.Play c -> (
-              match card_type_of_card c with
-              | Special TwoToMax ->
-                  let* actor = get_player actor_id in
-                  let partner = other_twotomax_card c in
-                  if not (List.mem partner actor.Player.hand) then
-                    Error
-                      "You need both TwoToMax cards (9♣ and 10♣) in hand to \
-                       use this effect."
-                  else
-                    let s' =
-                      State.apply_card actor_id c s
-                      |> State.apply_card actor_id partner
-                      |> modify_actor actor_id (Player.set_max_lives 1)
-                    in
-                    Ok
-                      ( s',
-                        Printf.sprintf
-                          "Player %d collected both TwoToMax cards — max lives \
-                           raised to %d!"
-                          actor_id
-                          (actor.Player.max_lives + 1) )
-              | Special DeadMansGamble ->
-                  let partner = dmg_partner_card c in
-                  let holders =
-                    List.filter_map
-                      (fun p ->
-                        if
-                          p.Player.id <> actor_id
-                          && List.mem partner p.Player.hand
-                        then Some p.Player.id
-                        else None)
-                      s.State.players
-                  in
-                  let s' = State.apply_card actor_id c s in
-                  if holders = [] then
-                    Ok
-                      ( modify_actor actor_id (Player.modify_lives 1) s',
-                        Printf.sprintf
-                          "Player %d played Dead Man's Gamble and gained 1 \
-                           life! (no one holds the partner card)"
-                          actor_id )
-                  else
-                    Ok
-                      ( State.set_pending_dmg actor_id c holders s',
-                        Printf.sprintf
-                          "Player %d played Dead Man's Gamble! Waiting for \
-                           responses from: %s."
-                          actor_id
-                          (String.concat ", " (List.map string_of_int holders))
-                      )
-              | Special Chaos ->
-                  execute_attack actor_id c target_id 1 State.ByAttack
-                    (fun tid ->
-                      Printf.sprintf
-                        "Player %d played Chaos on player %d! Player %d must \
-                         respond with an Attack card or pass."
-                        actor_id tid tid)
-                    s
-              | _ -> (
-                  match effect_of_card c with
-                  | Attack dmg ->
-                      execute_attack actor_id c target_id dmg State.ByBlock
-                        (fun tid ->
-                          Printf.sprintf
-                            "Player %d attacked player %d! Player %d must \
-                             block or pass."
-                            actor_id tid tid)
-                        s
-                  | Heal amt ->
-                      let* actor = get_player actor_id in
-                      let actor' =
-                        Player.remove_from_hand c actor
-                        |> Player.modify_lives amt
-                      in
-                      let s' =
-                        s |> State.update_player actor' |> State.onto_discard c
-                      in
-                      Ok
-                        ( s',
-                          Printf.sprintf
-                            "Player %d healed! (%d lives remaining)" actor_id
-                            actor'.Player.lives )
-                  | Block -> Error "No attack is pending — nothing to block."
-                  | NoEffect -> Error "That card has no effect yet."))
-          | Turn.Discard c ->
-              Ok
-                ( State.apply_card actor_id c s,
-                  Printf.sprintf "Player %d discarded a card." actor_id )
-          | Turn.Pass -> Ok (s, Printf.sprintf "Player %d passed." actor_id)))
+  | None -> handle_sayno_window ()

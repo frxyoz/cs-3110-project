@@ -34,6 +34,18 @@ type pending_dmg = {
   any_triggered : bool;
 }
 
+type pending_sayno_effect =
+  | Heal of int
+  | TwoToMax of Types.card
+  | DeadMansGamble of Types.card * int list
+  | Diplomacy of (int * Types.card) list
+
+type pending_sayno = {
+  source_id : int;
+  waiting_on : int list;
+  resolution : pending_sayno_effect;
+}
+
 type t = {
   players : Player.t list;
   deck : card list;
@@ -47,6 +59,8 @@ type t = {
   (* Some when a Dead Man's Gamble was played and partner holders haven't
      responded yet. *)
   pending_dmg : pending_dmg option;
+  (* Some when a non-attack card is waiting for Say No responses. *)
+  pending_sayno : pending_sayno option;
   (* how many attacks the current player has used this round *)
   attacks_used : int;
 }
@@ -61,6 +75,7 @@ let make () =
     round = None;
     pending = None;
     pending_dmg = None;
+    pending_sayno = None;
     attacks_used = 0;
   }
 
@@ -119,6 +134,7 @@ let start_game (s : t) : t =
     round = Some Action;
     pending = None;
     pending_dmg = None;
+    pending_sayno = None;
     attacks_used = 0;
   }
 
@@ -187,6 +203,10 @@ let set_pending_dmg (actor_id : int) (played_card : Types.card)
         };
   }
 
+let set_pending_sayno (source_id : int) (resolution : pending_sayno_effect)
+    (waiting_on : int list) (s : t) : t =
+  { s with pending_sayno = Some { source_id; waiting_on; resolution } }
+
 let dmg_respond (responder_id : int) (played : bool) (s : t) : t =
   match s.pending_dmg with
   | None -> s
@@ -205,6 +225,36 @@ let dmg_respond (responder_id : int) (played : bool) (s : t) : t =
             };
       }
 
+let sayno_respond (responder_id : int) (played : bool) (s : t) : t =
+  match s.pending_sayno with
+  | None -> s
+  | Some psay ->
+      let waiting_on' =
+        List.filter (fun id -> id <> responder_id) psay.waiting_on
+      in
+      { s with pending_sayno = Some { psay with waiting_on = waiting_on' } }
+
+let diplomacy_join (joiner_id : int) (played_card : Types.card) (s : t) : t =
+  match s.pending_sayno with
+  | None -> s
+  | Some psay -> (
+      let waiting_on' =
+        List.filter (fun id -> id <> joiner_id) psay.waiting_on
+      in
+      match psay.resolution with
+      | Diplomacy joins ->
+          {
+            s with
+            pending_sayno =
+              Some
+                {
+                  psay with
+                  waiting_on = waiting_on';
+                  resolution = Diplomacy ((joiner_id, played_card) :: joins);
+                };
+          }
+      | _ -> s)
+
 (* Call once waiting_on is empty to apply the +1/-1 life to the actor. *)
 let resolve_dmg (s : t) : t =
   match s.pending_dmg with
@@ -216,3 +266,63 @@ let resolve_dmg (s : t) : t =
       | Some actor ->
           let delta = if pdmg.any_triggered then -1 else 1 in
           update_player (Player.modify_lives delta actor) s' |> check_game_over)
+
+let resolve_sayno (s : t) : t =
+  match s.pending_sayno with
+  | None -> s
+  | Some psay -> (
+      let s' = { s with pending_sayno = None } in
+      let remove_from_discard card state =
+        let rec aux = function
+          | [] -> []
+          | x :: rest -> if x = card then rest else x :: aux rest
+        in
+        { state with discard = aux state.discard }
+      in
+      match psay.resolution with
+      | Heal amt -> (
+          match find_player psay.source_id s' with
+          | None -> s'
+          | Some actor ->
+              update_player (Player.modify_lives amt actor) s'
+              |> check_game_over)
+      | TwoToMax partner -> (
+          match find_player psay.source_id s' with
+          | None -> s'
+          | Some actor ->
+              let actor' =
+                Player.remove_from_hand partner actor |> Player.set_max_lives 1
+              in
+              update_player actor' s' |> onto_discard partner)
+      | DeadMansGamble (played_card, holders) ->
+          if holders = [] then
+            match find_player psay.source_id s' with
+            | None -> s'
+            | Some actor ->
+                update_player (Player.modify_lives 1 actor) s'
+                |> check_game_over
+          else set_pending_dmg psay.source_id played_card holders s'
+      | Diplomacy joins -> (
+          match find_player psay.source_id s' with
+          | None -> s'
+          | Some actor ->
+              let actor' = Player.modify_lives 1 actor in
+              let s'' = update_player actor' s' in
+              let rec apply_joins st = function
+                | [] -> st
+                | (joiner_id, card) :: rest ->
+                    let st =
+                      match find_player joiner_id st with
+                      | None -> st
+                      | Some joiner ->
+                          update_player (Player.modify_lives 1 joiner) st
+                    in
+                    let st =
+                      match find_player psay.source_id st with
+                      | None -> st
+                      | Some source ->
+                          update_player (Player.force_add card source) st
+                    in
+                    apply_joins (remove_from_discard card st) rest
+              in
+              apply_joins s'' (List.rev joins) |> check_game_over))

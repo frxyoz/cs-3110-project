@@ -42,6 +42,7 @@ let string_of_rank = function
   | Types.Queen -> "Q"
   | Types.King -> "K"
   | Types.Ace -> "A"
+  | Types.Joker -> "J"
 
 let string_of_suit = function
   | Types.Hearts -> "H"
@@ -50,7 +51,9 @@ let string_of_suit = function
   | Types.Spades -> "S"
 
 let string_of_card (c : Types.card) =
-  string_of_rank c.Types.rank ^ string_of_suit c.Types.suit
+  if c.Types.rank = Types.Joker then
+    if c.Types.color = Types.Black then "BJ" else "RJ"
+  else string_of_rank c.Types.rank ^ string_of_suit c.Types.suit
 
 let string_of_hand (hand : Types.card list) =
   if hand = [] then "(empty)"

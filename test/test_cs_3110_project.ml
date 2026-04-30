@@ -124,6 +124,12 @@ let ace_h = mk_card Types.Ace Types.Hearts
 let ace_c = mk_card Types.Ace Types.Clubs
 let ace_d = mk_card Types.Ace Types.Diamonds
 
+let black_joker =
+  { Types.rank = Types.Joker; suit = Types.Spades; color = Types.Black }
+
+let red_joker =
+  { Types.rank = Types.Joker; suit = Types.Hearts; color = Types.Red }
+
 let tests =
   "test suite"
   >::: [
@@ -196,20 +202,20 @@ let tests =
            let p' = Player.remove_from_hand card p in
            assert_equal ~printer:string_of_int 2 (List.length p'.Player.hand) );
          (* ── Deck ── *)
-         ( "full deck contains 52 cards" >:: fun _ ->
-           assert_equal ~printer:string_of_int 52 (List.length Deck.full_deck)
+         ( "full deck contains 54 cards" >:: fun _ ->
+           assert_equal ~printer:string_of_int 54 (List.length Deck.full_deck)
          );
          ( "deal splits into dealt and remaining" >:: fun _ ->
            let dealt, remaining = Deck.deal 7 Deck.full_deck in
            assert_equal ~printer:string_of_int 7 (List.length dealt);
-           assert_equal ~printer:string_of_int 45 (List.length remaining) );
+           assert_equal ~printer:string_of_int 47 (List.length remaining) );
          ( "deal returns all cards when n exceeds deck" >:: fun _ ->
            let dealt, remaining = Deck.deal 60 Deck.full_deck in
-           assert_equal ~printer:string_of_int 52 (List.length dealt);
+           assert_equal ~printer:string_of_int 54 (List.length dealt);
            assert_equal ~printer:string_of_int 0 (List.length remaining) );
          ( "shuffle preserves deck size" >:: fun _ ->
            let shuffled = Deck.shuffle Deck.full_deck in
-           assert_equal ~printer:string_of_int 52 (List.length shuffled) );
+           assert_equal ~printer:string_of_int 54 (List.length shuffled) );
          (* ── State ── *)
          ( "initial state has no players" >:: fun _ ->
            let s = State.make () in
@@ -245,7 +251,7 @@ let tests =
            let p = Player.make_player 1 "Alice" in
            let s' = add_or_fail p s in
            let s_started = State.start_game s' in
-           assert_equal ~printer:string_of_int 45
+           assert_equal ~printer:string_of_int 47
              (List.length s_started.State.deck) );
          ( "next turn increments turn index" >:: fun _ ->
            let s = State.make () in
@@ -411,6 +417,12 @@ let tests =
          ( "King is Special HealOrDoubleAttack" >:: fun _ ->
            assert_equal (Types.Special Types.HealOrDoubleAttack)
              (Rules.card_type_of_card king) );
+         ( "black joker is Special BlackJoker" >:: fun _ ->
+           assert_equal (Types.Special Types.BlackJoker)
+             (Rules.card_type_of_card black_joker) );
+         ( "red joker is Special RedJoker" >:: fun _ ->
+           assert_equal (Types.Special Types.RedJoker)
+             (Rules.card_type_of_card red_joker) );
          (* ── Rules: effect_of_card ── *)
          ( "BasicAttack produces Attack 1" >:: fun _ ->
            assert_equal (Types.Attack 1) (Rules.effect_of_card atk) );
@@ -426,6 +438,10 @@ let tests =
            assert_equal Types.NoEffect (Rules.effect_of_card club2) );
          ( "Jack produces NoEffect" >:: fun _ ->
            assert_equal Types.NoEffect (Rules.effect_of_card jack) );
+         ( "black joker produces NoEffect" >:: fun _ ->
+           assert_equal Types.NoEffect (Rules.effect_of_card black_joker) );
+         ( "red joker produces NoEffect" >:: fun _ ->
+           assert_equal Types.NoEffect (Rules.effect_of_card red_joker) );
          (* ── Rules: resolve_action — normal turn ── *)
          ( "play attack sets pending" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ atk ] in
@@ -470,28 +486,125 @@ let tests =
            match Rules.resolve_action 1 (Turn.Play atk) (Some 2) s with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
-         ( "play heal increases actor lives" >:: fun _ ->
+         ( "play heal opens Say No window" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ heal ] |> set_player_lives 1 5
            in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
            in
-           let p1 = get_player 1 s' in
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "play heal resolves after pass" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ heal ] |> set_player_lives 1 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p1 = get_player 1 s'' in
            assert_equal ~printer:string_of_int 6 p1.Player.lives );
-         ( "play heal discards the card" >:: fun _ ->
+         ( "play heal discards the card after response window" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ heal ] in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
            in
-           assert_equal heal (List.hd s'.State.discard) );
-         ( "play heal removes card from hand" >:: fun _ ->
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           assert_equal heal (List.hd s''.State.discard) );
+         ( "play heal removes card from hand after response window" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ heal ] in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p1 = get_player 1 s'' in
+           assert_equal ~printer:string_of_int 0 (List.length p1.Player.hand) );
+         ( "SayNo cancels heal" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ heal ] |> set_hand 2 [ diam2 ]
+             |> set_player_lives 1 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
+           in
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play diam2) None s')
+           in
+           let p1 = get_player 1 s'' in
+           assert_equal ~printer:string_of_int 5 p1.Player.lives;
+           assert_equal None s''.State.pending_sayno );
+         ( "play diplomacy opens Say No window" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ diam4 ] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play diam4) None s)
+           in
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "diplomacy can be joined with any card" >:: fun _ ->
+           let s =
+             three_player_game () |> set_hand 1 [ diam4 ] |> set_hand 2 [ atk ]
+             |> set_hand 3 [ blk ] |> set_player_lives 1 5
+             |> set_player_lives 2 5 |> set_player_lives 3 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play diam4) None s)
+           in
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play atk) None s')
+           in
+           let s''', _ =
+             ok_or_fail (Rules.resolve_action 3 Turn.Pass None s'')
+           in
+           let p1 = get_player 1 s''' in
+           let p2 = get_player 2 s''' in
+           assert_equal ~printer:string_of_int 6 p1.Player.lives;
+           assert_equal ~printer:string_of_int 6 p2.Player.lives;
+           assert_equal ~printer:string_of_int 1 (List.length p1.Player.hand);
+           assert_equal atk (List.hd p1.Player.hand);
+           assert_equal ~printer:string_of_int 0 (List.length p2.Player.hand);
+           assert_equal diam4 (List.hd s'''.State.discard) );
+         ( "diplomacy gives a life even when nobody joins" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ diam4 ] |> set_player_lives 1 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play diam4) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p1 = get_player 1 s'' in
+           assert_equal ~printer:string_of_int 6 p1.Player.lives;
+           assert_equal ~printer:string_of_int 0 (List.length p1.Player.hand) );
+         ( "black joker reduces all alive players by 1" >:: fun _ ->
+           let s =
+             three_player_game () |> set_hand 1 [ black_joker ]
+             |> set_player_lives 1 5 |> set_player_lives 2 5
+             |> set_player_lives 3 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play black_joker) None s)
            in
            let p1 = get_player 1 s' in
-           assert_equal ~printer:string_of_int 0 (List.length p1.Player.hand) );
+           let p2 = get_player 2 s' in
+           let p3 = get_player 3 s' in
+           assert_equal ~printer:string_of_int 4 p1.Player.lives;
+           assert_equal ~printer:string_of_int 4 p2.Player.lives;
+           assert_equal ~printer:string_of_int 4 p3.Player.lives;
+           assert_equal black_joker (List.hd s'.State.discard) );
+         ( "red joker increases all alive players by 1" >:: fun _ ->
+           let s =
+             three_player_game () |> set_hand 1 [ red_joker ]
+             |> set_player_lives 1 5 |> set_player_lives 2 5
+             |> set_player_lives 3 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play red_joker) None s)
+           in
+           let p1 = get_player 1 s' in
+           let p2 = get_player 2 s' in
+           let p3 = get_player 3 s' in
+           assert_equal ~printer:string_of_int 6 p1.Player.lives;
+           assert_equal ~printer:string_of_int 6 p2.Player.lives;
+           assert_equal ~printer:string_of_int 6 p3.Player.lives;
+           assert_equal red_joker (List.hd s'.State.discard) );
          ( "play block with no pending returns error" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ blk ] in
            match Rules.resolve_action 1 (Turn.Play blk) None s with
@@ -521,6 +634,38 @@ let tests =
            assert_equal s.State.players s'.State.players;
            assert_equal s.State.discard s'.State.discard );
          (* ── Rules: resolve_action — pending attack ── *)
+         ( "black joker reduces all alive players by 1" >:: fun _ ->
+           let s =
+             three_player_game () |> set_hand 1 [ black_joker ]
+             |> set_player_lives 1 5 |> set_player_lives 2 5
+             |> set_player_lives 3 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play black_joker) None s)
+           in
+           let p1 = get_player 1 s' in
+           let p2 = get_player 2 s' in
+           let p3 = get_player 3 s' in
+           assert_equal ~printer:string_of_int 4 p1.Player.lives;
+           assert_equal ~printer:string_of_int 4 p2.Player.lives;
+           assert_equal ~printer:string_of_int 4 p3.Player.lives;
+           assert_equal black_joker (List.hd s'.State.discard) );
+         ( "red joker increases all alive players by 1" >:: fun _ ->
+           let s =
+             three_player_game () |> set_hand 1 [ red_joker ]
+             |> set_player_lives 1 5 |> set_player_lives 2 5
+             |> set_player_lives 3 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play red_joker) None s)
+           in
+           let p1 = get_player 1 s' in
+           let p2 = get_player 2 s' in
+           let p3 = get_player 3 s' in
+           assert_equal ~printer:string_of_int 6 p1.Player.lives;
+           assert_equal ~printer:string_of_int 6 p2.Player.lives;
+           assert_equal ~printer:string_of_int 6 p3.Player.lives;
+           assert_equal red_joker (List.hd s'.State.discard) );
          ( "non-target cannot act while attack is pending" >:: fun _ ->
            let s = two_player_game () |> with_pending 1 2 1 in
            match Rules.resolve_action 1 Turn.Pass None s with
@@ -668,19 +813,33 @@ let tests =
            let p2 = get_player 2 s' in
            assert_equal ~printer:string_of_int 4 p2.Player.lives );
          (* ── Rules: TwoToMax (9♣/10♣) ── *)
-         ( "TwoToMax 9♣ with 10♣ raises max lives" >:: fun _ ->
+         ( "TwoToMax 9♣ with 10♣ opens Say No window" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ club9; club10 ] in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club9) None s)
            in
-           let p1 = get_player 1 s' in
-           assert_equal ~printer:string_of_int 8 p1.Player.max_lives );
-         ( "TwoToMax 10♣ with 9♣ raises max lives" >:: fun _ ->
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "TwoToMax 10♣ with 9♣ opens Say No window" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ club9; club10 ] in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club10) None s)
            in
-           let p1 = get_player 1 s' in
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "TwoToMax 9♣ with 10♣ raises max lives after pass" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ club9; club10 ] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club9) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p1 = get_player 1 s'' in
+           assert_equal ~printer:string_of_int 8 p1.Player.max_lives );
+         ( "TwoToMax 10♣ with 9♣ raises max lives after pass" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ club9; club10 ] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club10) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p1 = get_player 1 s'' in
            assert_equal ~printer:string_of_int 8 p1.Player.max_lives );
          ( "TwoToMax 9♣ without 10♣ returns error" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ club9 ] in
@@ -692,29 +851,31 @@ let tests =
            match Rules.resolve_action 1 (Turn.Play club10) None s with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
-         ( "TwoToMax discards played card" >:: fun _ ->
+         ( "TwoToMax discards played card after pass" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ club9; club10 ] in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club9) None s)
            in
-           assert_equal true (List.mem club9 s'.State.discard) );
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           assert_equal true (List.mem club9 s''.State.discard) );
          ( "TwoToMax single card can be discarded" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ club9 ] in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Discard club9) None s)
            in
            assert_equal club9 (List.hd s'.State.discard) );
-         ( "TwoToMax both cards are discarded" >:: fun _ ->
+         ( "TwoToMax both cards are discarded after pass" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ club9; club10 ] in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club9) None s)
            in
-           let p1 = get_player 1 s' in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p1 = get_player 1 s'' in
            assert_equal 0 (List.length p1.Player.hand);
-           assert_equal true (List.mem club9 s'.State.discard);
-           assert_equal true (List.mem club10 s'.State.discard) );
+           assert_equal true (List.mem club9 s''.State.discard);
+           assert_equal true (List.mem club10 s''.State.discard) );
          (* ── Rules: DeadMansGamble (7♣/8♣) ── *)
-         ( "DMG 7♣ no partner holder: immediate +1 life" >:: fun _ ->
+         ( "DMG 7♣ no partner holder opens Say No window" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ club7 ] |> set_hand 2 []
              |> set_player_lives 1 5
@@ -722,9 +883,19 @@ let tests =
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
            in
-           let p1 = get_player 1 s' in
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "DMG 7♣ no partner holder gains life after pass" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ club7 ] |> set_hand 2 []
+             |> set_player_lives 1 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p1 = get_player 1 s'' in
            assert_equal ~printer:string_of_int 6 p1.Player.lives );
-         ( "DMG 8♣ no partner holder: immediate +1 life" >:: fun _ ->
+         ( "DMG 8♣ no partner holder opens Say No window" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ club8 ] |> set_hand 2 []
              |> set_player_lives 1 5
@@ -732,27 +903,37 @@ let tests =
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club8) None s)
            in
-           let p1 = get_player 1 s' in
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "DMG 8♣ no partner holder gains life after pass" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ club8 ] |> set_hand 2 []
+             |> set_player_lives 1 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club8) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p1 = get_player 1 s'' in
            assert_equal ~printer:string_of_int 6 p1.Player.lives );
-         ( "DMG sets pending_dmg when partner is held" >:: fun _ ->
+         ( "DMG sets pending_sayno when partner is held" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ club7 ] |> set_hand 2 [ club8 ]
            in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
            in
-           assert_equal true (s'.State.pending_dmg <> None) );
-         ( "DMG pending_dmg waiting_on contains holder" >:: fun _ ->
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "DMG pending_sayno waiting_on contains holder" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ club7 ] |> set_hand 2 [ club8 ]
            in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
            in
-           match s'.State.pending_dmg with
-           | Some pdmg -> assert_equal [ 2 ] pdmg.State.waiting_on
-           | None -> assert_failure "expected pending_dmg" );
-         ( "DMG holder passes: actor gains 1 life" >:: fun _ ->
+           match s'.State.pending_sayno with
+           | Some psay -> assert_equal [ 2 ] psay.State.waiting_on
+           | None -> assert_failure "expected pending_sayno" );
+         ( "DMG holder passes Say No then gains 1 life" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ club7 ] |> set_hand 2 [ club8 ]
              |> set_player_lives 1 5
@@ -761,9 +942,12 @@ let tests =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
            in
            let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
-           let p1 = get_player 1 s'' in
+           let s''', _ =
+             ok_or_fail (Rules.resolve_action 2 Turn.Pass None s'')
+           in
+           let p1 = get_player 1 s''' in
            assert_equal ~printer:string_of_int 6 p1.Player.lives );
-         ( "DMG holder passes: clears pending_dmg" >:: fun _ ->
+         ( "DMG holder passes Say No then clears pending_dmg" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ club7 ] |> set_hand 2 [ club8 ]
            in
@@ -771,8 +955,12 @@ let tests =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
            in
            let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
-           assert_equal None s''.State.pending_dmg );
-         ( "DMG holder plays response: actor loses 1 life" >:: fun _ ->
+           let s''', _ =
+             ok_or_fail (Rules.resolve_action 2 Turn.Pass None s'')
+           in
+           assert_equal None s'''.State.pending_dmg );
+         ( "DMG holder plays response after Say No window: actor loses 1 life"
+         >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ club7 ] |> set_hand 2 [ club8 ]
              |> set_player_lives 1 5
@@ -780,22 +968,25 @@ let tests =
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
            in
-           let s'', _ =
-             ok_or_fail (Rules.resolve_action 2 (Turn.Play club8) None s')
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let s''', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play club8) None s'')
            in
-           let p1 = get_player 1 s'' in
+           let p1 = get_player 1 s''' in
            assert_equal ~printer:string_of_int 4 p1.Player.lives );
-         ( "DMG holder plays response: clears pending_dmg" >:: fun _ ->
+         ( "DMG holder plays response after Say No window clears pending_dmg"
+         >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ club7 ] |> set_hand 2 [ club8 ]
            in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
            in
-           let s'', _ =
-             ok_or_fail (Rules.resolve_action 2 (Turn.Play club8) None s')
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let s''', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play club8) None s'')
            in
-           assert_equal None s''.State.pending_dmg );
+           assert_equal None s'''.State.pending_dmg );
          ( "DMG response can reduce actor to 0 and trigger game over"
          >:: fun _ ->
            let s =
@@ -805,10 +996,11 @@ let tests =
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
            in
-           let s'', _ =
-             ok_or_fail (Rules.resolve_action 2 (Turn.Play club8) None s')
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let s''', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play club8) None s'')
            in
-           match s''.State.status with
+           match s'''.State.status with
            | State.GameOver w -> assert_equal 2 w.Player.id
            | _ -> assert_failure "expected GameOver" );
          ( "DMG non-waiting player cannot act during response window"
@@ -820,7 +1012,7 @@ let tests =
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
            in
-           match Rules.resolve_action 3 Turn.Pass None s' with
+           match Rules.resolve_action 1 Turn.Pass None s' with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
          ( "DMG holder cannot discard during response window" >:: fun _ ->
@@ -866,7 +1058,13 @@ let tests =
            let s''', _ =
              ok_or_fail (Rules.resolve_action 3 Turn.Pass None s'')
            in
-           let p1 = get_player 1 s''' in
+           let s'''', _ =
+             ok_or_fail (Rules.resolve_action 2 Turn.Pass None s''')
+           in
+           let s''''', _ =
+             ok_or_fail (Rules.resolve_action 3 Turn.Pass None s'''')
+           in
+           let p1 = get_player 1 s''''' in
            assert_equal ~printer:string_of_int 6 p1.Player.lives );
          ( "DMG multiple holders one triggers: actor loses 1 life" >:: fun _ ->
            let s =
@@ -877,13 +1075,17 @@ let tests =
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
            in
-           let s'', _ =
-             ok_or_fail (Rules.resolve_action 2 (Turn.Play club8) None s')
-           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
            let s''', _ =
              ok_or_fail (Rules.resolve_action 3 Turn.Pass None s'')
            in
-           let p1 = get_player 1 s''' in
+           let s'''', _ =
+             ok_or_fail (Rules.resolve_action 3 (Turn.Play club8) None s''')
+           in
+           let s''''', _ =
+             ok_or_fail (Rules.resolve_action 2 Turn.Pass None s'''')
+           in
+           let p1 = get_player 1 s''''' in
            assert_equal ~printer:string_of_int 4 p1.Player.lives );
        ]
 
