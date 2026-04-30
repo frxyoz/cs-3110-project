@@ -303,6 +303,9 @@ let card_raylib_color (c : Types.card) =
 
 let card_description (c : Types.card) : string list =
   match c.Types.rank with
+  | Types.Joker ->
+      if c.Types.color = Types.Red then [ "Angel"; "Heal all" ]
+      else [ "Devil"; "Attack all" ]
   | Types.Ace -> (
       match c.Types.suit with
       | Types.Clubs ->
@@ -488,6 +491,7 @@ let rank_str (c : Types.card) =
   | Types.Queen -> "Q"
   | Types.King -> "K"
   | Types.Ace -> "A"
+  | Types.Joker -> if c.Types.color = Types.Red then "RJ" else "BJ"
 
 let draw_card x y (c : Types.card) hovered =
   let bg =
