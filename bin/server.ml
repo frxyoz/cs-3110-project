@@ -163,9 +163,21 @@ let rec action_phase_loop passes_in_a_row =
               | target :: _ -> (target, true)
               | [] -> failwith "invalid pending state")
           | None -> (
-              match State.current_player s with
-              | Some p -> (p.Player.id, false)
-              | None -> failwith "no current player")
+              match s.State.pending_dmg with
+              | Some pdmg -> (
+                  match pdmg.State.waiting_on with
+                  | waiter :: _ -> (waiter, true)
+                  | [] -> failwith "pending_dmg with no waiting_on")
+              | None -> (
+                  match s.State.pending_sayno with
+                  | Some psay -> (
+                      match psay.State.waiting_on with
+                      | waiter :: _ -> (waiter, true)
+                      | [] -> failwith "pending_sayno with no waiting_on")
+                  | None -> (
+                      match State.current_player s with
+                      | Some p -> (p.Player.id, false)
+                      | None -> failwith "no current player")))
         in
         let actor =
           match State.find_player actor_id s with
@@ -190,11 +202,18 @@ let rec action_phase_loop passes_in_a_row =
                 |> String.concat ", "
               in
               let prompt =
-                if is_response then
+                if is_response && s.State.pending <> None then
                   Printf.sprintf
                     "Incoming attack! Play a block card ('play <n>') or 'pass' \
                      to take the damage.\n\
                      Your hand: %s\n\
+                     > "
+                    (string_of_hand actor.Player.hand)
+                else if is_response then
+                  Printf.sprintf
+                    "Respond to the active card.\n\
+                     Your hand: %s\n\
+                     Commands: play <n> | pass\n\
                      > "
                     (string_of_hand actor.Player.hand)
                 else
@@ -224,10 +243,15 @@ let rec action_phase_loop passes_in_a_row =
                   | Ok (new_state, event_msg) ->
                       game_state := new_state;
                       let* () = broadcast_to_all event_msg in
-                      (* Only advance the turn when no attack is pending. An
-                         attack sets pending; the response clears it. *)
-                      if new_state.State.pending = None then
-                        game_state := State.next_turn !game_state;
+                      (* Only advance the turn when no response window is
+                         pending. An attack sets pending; the response clears
+                         it. DMG and Say No set pending_dmg/pending_sayno; they
+                         clear when resolved. *)
+                      if
+                        new_state.State.pending = None
+                        && new_state.State.pending_dmg = None
+                        && new_state.State.pending_sayno = None
+                      then game_state := State.next_turn !game_state;
                       (* Only a voluntary pass (not taking damage) counts toward
                          ending the round. *)
                       let new_passes =

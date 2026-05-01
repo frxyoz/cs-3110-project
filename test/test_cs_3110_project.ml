@@ -566,6 +566,23 @@ let tests =
            assert_equal heal (List.hd p2.Player.hand);
            assert_equal diam3 (List.hd s''.State.discard);
            assert_equal None s''.State.pending_sayno );
+         ( "Reflector resolves heal and costs the responder a life"
+         >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ heal ] |> set_hand 2 [ diam9 ]
+             |> set_player_lives 1 5 |> set_player_lives 2 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
+           in
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play diam9) None s')
+           in
+           let p1 = get_player 1 s'' in
+           let p2 = get_player 2 s'' in
+           assert_equal ~printer:string_of_int 6 p1.Player.lives;
+           assert_equal ~printer:string_of_int 4 p2.Player.lives;
+           assert_equal None s''.State.pending_sayno );
          ( "play diplomacy opens Say No window" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ diam4 ] in
            let s', _ =

@@ -34,6 +34,7 @@ type pending_sayno_effect =
   | TwoToMax of Types.card
   | DeadMansGamble of Types.card * int list
   | Diplomacy of (int * Types.card) list
+  | Sacrifice
 
 type pending_sayno = {
   source_id : int;

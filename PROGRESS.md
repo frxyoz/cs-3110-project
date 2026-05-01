@@ -1,6 +1,10 @@
 # Progress Log
 
 ## 2026-04-30 (Isabella)
+- fixed twotomax to discard both cards when played
+- implemented reflector and sacrifice
+- fixed turn error. passes on special cards or passes as a response to a card are no longer counted as a turn for a player
+## 2026-04-30 (Isabella)
 - fixed arrowstorm, chaos, and diplomacy
 - implemented reversify, garbage disposal, and draw2
 
@@ -25,11 +29,10 @@
 
 
 ### What is NOT yet implemented (pick up from here)
-isabella's opinion on what should be worked on next:
-- 1) an error when passing special cards, counts pass as a turn? which results in a player's turn getting skipped
-- 2) IMPLEMENT ACES NEXT! - other things are dependent on this
+- IMPLEMENT ACES NEXT! - other things are dependent on this
+- or IMPLEMENT JUDGEMENT!
 
-- `resolve_action` for remaining **diamonds specials**: Silencer (6♦), DoubleAgent (7♦), SummonLightning (8♦), Reflector (9♦), Sacrifice (10♦)
+- `resolve_action` for remaining **diamonds specials**: Silencer (6♦), DoubleAgent (7♦), SummonLightning (8♦). These all require judgement
 - `resolve_action` for **clubs 4–6**: LifeLock (5♣), Reduction (6♣)(aces should be implemented before reduction)
 - `resolve_action` for **face cards**: Jack (Break), Queen (Steal), King (Heal or Double Attack when played with an attack card)
 - **Equipment resolve**: equipping Aces, UnlimitedAttack bypassing `attacks_used`, BlockHealReverse swapping block↔heal, Unblockable preventing instant response, Random50 50/50 flip

@@ -39,6 +39,7 @@ type pending_sayno_effect =
   | TwoToMax of Types.card
   | DeadMansGamble of Types.card * int list
   | Diplomacy of (int * Types.card) list
+  | Sacrifice
 
 type pending_sayno = {
   source_id : int;
@@ -313,7 +314,8 @@ let resolve_sayno (s : t) : t =
               let actor' =
                 Player.remove_from_hand partner actor |> Player.set_max_lives 1
               in
-              update_player actor' s' |> onto_discard partner)
+              update_player actor' s' |> onto_discard partner
+              |> onto_discard psay.source_card)
       | DeadMansGamble (played_card, holders) ->
           if holders = [] then
             match find_player psay.source_id s' with
@@ -322,6 +324,14 @@ let resolve_sayno (s : t) : t =
                 update_player (Player.modify_lives 1 actor) s'
                 |> check_game_over
           else set_pending_dmg psay.source_id played_card holders s'
+      | Sacrifice -> (
+          match find_player psay.source_id s' with
+          | None -> s'
+          | Some actor ->
+              let actor' =
+                Player.modify_lives (-3) actor |> Player.set_max_lives 1
+              in
+              update_player actor' s' |> check_game_over)
       | Diplomacy joins ->
           let joiners = List.rev joins in
           (* [first_joiner; ...; last_joiner] *)

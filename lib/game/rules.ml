@@ -189,9 +189,6 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
     match action with
     | Turn.Play c -> (
         match card_type_of_card c with
-        | Special SayNo -> Error "Say No can only be played as a response."
-        | Special Reversify ->
-            Error "Reversify can only be played as a response."
         | Special Chaos ->
             if target_id <> None then Error "Chaos does not take a target."
             else
@@ -246,18 +243,6 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                         Printf.sprintf
                           "Player %d took the top card from the discard pile!"
                           actor_id )))
-        | Special TwoToMax ->
-            let* actor = get_player actor_id in
-            let partner = other_twotomax_card c in
-            if not (List.mem partner actor.Player.hand) then
-              Error
-                "You need both TwoToMax cards (9♣ and 10♣) in hand to use this \
-                 effect."
-            else
-              start_sayno c (TwoToMax partner)
-                (Printf.sprintf
-                   "Player %d played TwoToMax. Waiting for Say No responses."
-                   actor_id)
         | Special DeadMansGamble ->
             let holders =
               List.filter_map
@@ -275,6 +260,21 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                  "Player %d played Dead Man's Gamble. Waiting for Say No \
                   responses."
                  actor_id)
+        | Special TwoToMax ->
+            let* actor = get_player actor_id in
+            let partner = other_twotomax_card c in
+            if not (List.mem partner actor.Player.hand) then
+              Error
+                "You need both TwoToMax cards (9♣ and 10♣) in hand to use this \
+                 effect."
+            else
+              start_sayno c (TwoToMax partner)
+                (Printf.sprintf
+                   "Player %d played TwoToMax. Waiting for Say No responses."
+                   actor_id)
+        | Special SayNo -> Error "Say No can only be played as a response."
+        | Special Reversify ->
+            Error "Reversify can only be played as a response."
         | Special Diplomacy ->
             start_sayno c (Diplomacy [])
               (Printf.sprintf
@@ -299,6 +299,13 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
               ( s''',
                 Printf.sprintf "Player %d played Draw 2: they drew 2 cards!"
                   actor_id )
+        | Special Reflector ->
+            Error "Reflector can only be played as a response."
+        | Special Sacrifice ->
+            start_sayno c Sacrifice
+              (Printf.sprintf
+                 "Player %d played Sacrifice. Waiting for Say No responses."
+                 actor_id)
         | Special BlackJoker ->
             let s' =
               State.apply_card actor_id c s
@@ -370,6 +377,20 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                   Printf.sprintf
                     "Player %d reversed the action and took the card!" actor_id
                 )
+            else if card_type_of_card c = Special Reflector then
+              let s' = State.apply_card actor_id c s in
+              let s'' = State.resolve_sayno s' in
+              let s''' =
+                match State.find_player actor_id s'' with
+                | None -> s''
+                | Some responder ->
+                    State.update_player (Player.modify_lives (-1) responder) s''
+              in
+              Ok
+                ( s''',
+                  Printf.sprintf
+                    "Player %d reflected the action and lost 1 life." actor_id
+                )
             else if
               p.State.resolution = Diplomacy []
               ||
@@ -406,8 +427,8 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
               Ok (s', Printf.sprintf "Player %d said no!" actor_id)
             else
               Error
-                "You can only play Say No, Reversify, or pass during this \
-                 response."
+                "You can only play Say No, Reversify, Reflector, or pass \
+                 during this response."
         | Turn.Pass -> (
             let s' = State.sayno_respond actor_id false s in
             match s'.State.pending_sayno with
