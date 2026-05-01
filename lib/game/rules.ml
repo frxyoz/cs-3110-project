@@ -257,8 +257,8 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
             start_sayno c
               (DeadMansGamble (c, holders))
               (Printf.sprintf
-                 "Player %d played Dead Man's Gamble. Waiting for Say No \
-                  responses."
+                 "Player %d played Dead Man's Gamble. Waiting for possible \
+                  interception."
                  actor_id)
         | Special TwoToMax ->
             let* actor = get_player actor_id in
@@ -270,7 +270,8 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
             else
               start_sayno c (TwoToMax partner)
                 (Printf.sprintf
-                   "Player %d played TwoToMax. Waiting for Say No responses."
+                   "Player %d played TwoToMax. Waiting for possible \
+                    interception."
                    actor_id)
         | Special SayNo -> Error "Say No can only be played as a response."
         | Special Reversify ->
@@ -304,7 +305,8 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
         | Special Sacrifice ->
             start_sayno c Sacrifice
               (Printf.sprintf
-                 "Player %d played Sacrifice. Waiting for Say No responses."
+                 "Player %d played Sacrifice. Waiting for possible \
+                  interception."
                  actor_id)
         | Special BlackJoker ->
             let s' =
@@ -341,7 +343,8 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
             | Heal amt ->
                 start_sayno c (Heal amt)
                   (Printf.sprintf
-                     "Player %d played a heal. Waiting for Say No responses."
+                     "Player %d played a heal. Waiting for possible \
+                      interception."
                      actor_id)
             | Block -> Error "No attack is pending — nothing to block."
             | NoEffect -> Error "That card has no effect yet."))
@@ -354,7 +357,7 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
   let rec handle_sayno_window () =
     match s.State.pending_sayno with
     | Some p when p.State.waiting_on = [] ->
-        Ok (State.resolve_sayno s, "Pending Say No resolved.")
+        Ok (State.resolve_sayno s, "Pending Interception resolved.")
     | Some p when List.mem actor_id p.State.waiting_on -> (
         match action with
         | Turn.Play c ->
@@ -435,13 +438,18 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
             | Some p when p.State.waiting_on = [] ->
                 Ok
                   ( State.resolve_sayno s',
-                    Printf.sprintf "Player %d passed on Say No." actor_id )
-            | _ -> Ok (s', Printf.sprintf "Player %d passed on Say No." actor_id)
-            )
-        | Turn.Discard _ -> Error "Cannot discard during a Say No response.")
+                    Printf.sprintf "Player %d passed on Interception." actor_id
+                  )
+            | _ ->
+                Ok
+                  ( s',
+                    Printf.sprintf "Player %d passed on Interception." actor_id
+                  ))
+        | Turn.Discard _ ->
+            Error "Cannot discard during an interception response.")
     | Some p ->
         Error
-          (Printf.sprintf "Waiting for player %d to respond to Say No."
+          (Printf.sprintf "Waiting for player %d to respond to Interception."
              p.State.source_id)
     | None -> handle_attack_or_turn ()
   and handle_attack_or_turn () =
