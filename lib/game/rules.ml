@@ -56,8 +56,7 @@ let card_type_of_card (c : card) : card_type =
               | _ -> BasicHeal)
           | Clubs | Diamonds -> BasicAttack (* fallback *)))
 
-(* Effect produced when a card is played. Chaos is handled separately in
-   resolve_action (needs ByAttack pending). ArrowStorm is a normal attack. *)
+(* Effect produced when a card is played. *)
 let effect_of_card (c : card) : card_effect =
   match card_type_of_card c with
   | BasicAttack -> Attack 1
@@ -70,6 +69,18 @@ let apply_aoe_life (delta : int) (s : State.t) : State.t =
   List.fold_left
     (fun st p ->
       if Player.is_alive p then
+        match State.find_player p.Player.id st with
+        | None -> st
+        | Some player ->
+            State.update_player (Player.modify_lives delta player) st
+      else st)
+    s s.State.players
+
+let apply_aoe_life_except (actor_id : int) (delta : int) (s : State.t) : State.t
+    =
+  List.fold_left
+    (fun st p ->
+      if p.Player.id <> actor_id && Player.is_alive p then
         match State.find_player p.Player.id st with
         | None -> st
         | Some player ->
@@ -133,6 +144,11 @@ let execute_attack (actor_id : int) (c : card) (target_id : int option)
             in
             Ok (s', msg tid))
 
+let current_pending_target (p : State.pending_attack) : int option =
+  match p.target_ids with
+  | [] -> None
+  | target :: _ -> Some target
+
 let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
     (s : State.t) : (State.t * string, string) result =
   let ( let* ) = Result.bind in
@@ -176,6 +192,40 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
         | Special SayNo -> Error "Say No can only be played as a response."
         | Special Reversify ->
             Error "Reversify can only be played as a response."
+        | Special Chaos ->
+            if target_id <> None then Error "Chaos does not take a target."
+            else
+              let targets = alive_other_players actor_id s @ [ actor_id ] in
+              let s' =
+                State.apply_card actor_id c s
+                |> State.set_pending_targets actor_id targets 1 State.ByAttack
+                |> fun st ->
+                { st with State.attacks_used = st.State.attacks_used + 1 }
+              in
+              Ok
+                ( s',
+                  Printf.sprintf
+                    "Player %d played Chaos: all players may block with an \
+                     Attack or take 1 damage."
+                    actor_id )
+        | Special ArrowStorm ->
+            if target_id <> None then Error "ArrowStorm does not take a target."
+            else
+              let targets = alive_other_players actor_id s in
+              if targets = [] then Error "ArrowStorm has no valid targets."
+              else
+                let s' =
+                  State.apply_card actor_id c s
+                  |> State.set_pending_targets actor_id targets 1 State.ByBlock
+                  |> fun st ->
+                  { st with State.attacks_used = st.State.attacks_used + 1 }
+                in
+                Ok
+                  ( s',
+                    Printf.sprintf
+                      "Player %d played Arrowstorm: all other players may \
+                       block or take 1 damage."
+                      actor_id )
         | Special GarbageDisposal -> (
             match s.State.discard with
             | [] -> Error "No cards in discard pile to take."
@@ -196,14 +246,6 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                         Printf.sprintf
                           "Player %d took the top card from the discard pile!"
                           actor_id )))
-        | Special Chaos ->
-            execute_attack actor_id c target_id 1 State.ByAttack
-              (fun tid ->
-                Printf.sprintf
-                  "Player %d played Chaos on player %d! Player %d must respond \
-                   with an Attack card or pass."
-                  actor_id tid tid)
-              s
         | Special TwoToMax ->
             let* actor = get_player actor_id in
             let partner = other_twotomax_card c in
@@ -363,36 +405,44 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
     | None -> handle_attack_or_turn ()
   and handle_attack_or_turn () =
     match s.State.pending with
-    | Some p when p.State.target_id = actor_id -> (
-        match action with
-        | Turn.Play c ->
-            if can_counter (effect_of_card c) p.State.block_with then
-              let s' = State.apply_card actor_id c s |> State.clear_pending in
-              Ok (s', Printf.sprintf "Player %d blocked the attack!" actor_id)
-            else
-              Error
-                (Printf.sprintf
-                   "You can only play a %s card in response to this attack, or \
-                    Pass to take the damage."
-                   (counter_name p.State.block_with))
-        | Turn.Pass ->
-            let* target = get_player actor_id in
-            let target' = Player.modify_lives (-p.State.damage) target in
-            let s' =
-              s
-              |> State.update_player target'
-              |> State.clear_pending |> State.check_game_over
-            in
-            Ok
-              ( s',
-                Printf.sprintf "Player %d took %d damage! (%d lives remaining)"
-                  actor_id p.State.damage target'.Player.lives )
-        | Turn.Discard _ ->
-            Error "Cannot discard while an attack is pending — block or pass.")
-    | Some p ->
-        Error
-          (Printf.sprintf "Waiting for player %d to respond to the attack."
-             p.State.target_id)
+    | Some p -> (
+        match current_pending_target p with
+        | Some target when target = actor_id -> (
+            match action with
+            | Turn.Play c ->
+                if can_counter (effect_of_card c) p.State.block_with then
+                  let s' =
+                    State.apply_card actor_id c s |> State.clear_pending
+                  in
+                  Ok
+                    (s', Printf.sprintf "Player %d blocked the attack!" actor_id)
+                else
+                  Error
+                    (Printf.sprintf
+                       "You can only play a %s card in response to this \
+                        attack, or Pass to take the damage."
+                       (counter_name p.State.block_with))
+            | Turn.Pass ->
+                let* target = get_player actor_id in
+                let target' = Player.modify_lives (-p.State.damage) target in
+                let s' =
+                  s
+                  |> State.update_player target'
+                  |> State.clear_pending |> State.check_game_over
+                in
+                Ok
+                  ( s',
+                    Printf.sprintf
+                      "Player %d took %d damage! (%d lives remaining)" actor_id
+                      p.State.damage target'.Player.lives )
+            | Turn.Discard _ ->
+                Error
+                  "Cannot discard while an attack is pending — block or pass.")
+        | Some target ->
+            Error
+              (Printf.sprintf "Waiting for player %d to respond to the attack."
+                 target)
+        | None -> Error "Invalid pending attack target list.")
     | None -> handle_normal_turn ()
   in
   match s.State.pending_dmg with

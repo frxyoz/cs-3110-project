@@ -20,7 +20,7 @@ type block_type =
 
 type pending_attack = {
   attacker_id : int;
-  target_id : int;
+  target_ids : int list;
   damage : int;
   block_with : block_type;
 }
@@ -111,9 +111,25 @@ let next_turn (s : t) : t =
 
 let set_pending (attacker_id : int) (target_id : int) (damage : int)
     (block_with : block_type) (s : t) : t =
-  { s with pending = Some { attacker_id; target_id; damage; block_with } }
+  {
+    s with
+    pending =
+      Some { attacker_id; target_ids = [ target_id ]; damage; block_with };
+  }
 
-let clear_pending (s : t) : t = { s with pending = None }
+let set_pending_targets (attacker_id : int) (target_ids : int list)
+    (damage : int) (block_with : block_type) (s : t) : t =
+  { s with pending = Some { attacker_id; target_ids; damage; block_with } }
+
+let clear_pending (s : t) : t =
+  match s.pending with
+  | None -> s
+  | Some p -> (
+      match p.target_ids with
+      | [] -> { s with pending = None }
+      | _ :: rest ->
+          if rest = [] then { s with pending = None }
+          else { s with pending = Some { p with target_ids = rest } })
 
 (* Shuffle the deck, deal 7 cards to each player, and begin the game. *)
 let start_game (s : t) : t =

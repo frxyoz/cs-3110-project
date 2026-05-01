@@ -158,7 +158,10 @@ let rec action_phase_loop passes_in_a_row =
       else
         let actor_id, is_response =
           match s.State.pending with
-          | Some p -> (p.State.target_id, true)
+          | Some p -> (
+              match p.State.target_ids with
+              | target :: _ -> (target, true)
+              | [] -> failwith "invalid pending state")
           | None -> (
               match State.current_player s with
               | Some p -> (p.Player.id, false)

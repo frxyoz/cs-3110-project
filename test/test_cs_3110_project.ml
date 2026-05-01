@@ -51,21 +51,21 @@ let with_pending aid tid dmg s =
       Some
         {
           State.attacker_id = aid;
-          target_id = tid;
+          target_ids = [ tid ];
           damage = dmg;
           block_with = State.ByBlock;
         };
   }
 
 (* Place a Chaos-style pending attack (ByAttack) on the state directly. *)
-let with_chaos_pending aid tid dmg s =
+let with_chaos_pending aid target_ids dmg s =
   {
     s with
     State.pending =
       Some
         {
           State.attacker_id = aid;
-          target_id = tid;
+          target_ids;
           damage = dmg;
           block_with = State.ByAttack;
         };
@@ -452,7 +452,7 @@ let tests =
              (Some
                 {
                   State.attacker_id = 1;
-                  target_id = 2;
+                  target_ids = [ 2 ];
                   damage = 1;
                   block_with = State.ByBlock;
                 })
@@ -647,8 +647,8 @@ let tests =
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
          ( "play NoEffect card returns error" >:: fun _ ->
-           let s = two_player_game () |> set_hand 1 [ club2 ] in
-           match Rules.resolve_action 1 (Turn.Play club2) None s with
+           let s = two_player_game () |> set_hand 1 [ club5 ] in
+           match Rules.resolve_action 1 (Turn.Play club5) None s with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
          ( "discard removes card from hand" >:: fun _ ->
@@ -767,75 +767,88 @@ let tests =
          (* ── Rules: ArrowStorm (3♣) ── *)
          ( "ArrowStorm effect_of_card returns Attack 1" >:: fun _ ->
            assert_equal (Types.Attack 1) (Rules.effect_of_card club3) );
-         ( "ArrowStorm sets ByBlock pending" >:: fun _ ->
-           let s = two_player_game () |> set_hand 1 [ club3 ] in
-           let s', _ =
-             ok_or_fail (Rules.resolve_action 1 (Turn.Play club3) (Some 2) s)
+         ( "ArrowStorm sets pending for all other players" >:: fun _ ->
+           let s =
+             three_player_game () |> set_hand 1 [ club3 ]
+             |> set_player_lives 2 5 |> set_player_lives 3 5
            in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club3) None s)
+           in
+           let p1 = get_player 1 s' in
+           let p2 = get_player 2 s' in
+           let p3 = get_player 3 s' in
+           assert_equal ~printer:string_of_int 7 p1.Player.lives;
+           assert_equal ~printer:string_of_int 5 p2.Player.lives;
+           assert_equal ~printer:string_of_int 5 p3.Player.lives;
+           assert_equal ~printer:string_of_int 1 s'.State.attacks_used;
            match s'.State.pending with
-           | Some p -> assert_equal State.ByBlock p.State.block_with
+           | Some p -> assert_equal [ 2; 3 ] p.State.target_ids
            | None -> assert_failure "expected pending attack" );
-         ( "ArrowStorm without target returns error" >:: fun _ ->
+         ( "ArrowStorm rejects explicit target" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ club3 ] in
-           match Rules.resolve_action 1 (Turn.Play club3) None s with
+           match Rules.resolve_action 1 (Turn.Play club3) (Some 2) s with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
-         ( "ArrowStorm increments attacks_used" >:: fun _ ->
-           let s = two_player_game () |> set_hand 1 [ club3 ] in
-           let s', _ =
-             ok_or_fail (Rules.resolve_action 1 (Turn.Play club3) (Some 2) s)
-           in
-           assert_equal ~printer:string_of_int 1 s'.State.attacks_used );
-         ( "ArrowStorm blocked by Block card" >:: fun _ ->
+         ( "ArrowStorm target can block and the next target is queued"
+         >:: fun _ ->
            let s =
-             two_player_game () |> set_hand 2 [ blk ] |> with_pending 1 2 1
+             three_player_game () |> set_hand 1 [ club3 ] |> set_hand 2 [ blk ]
+             |> set_hand 3 [ atk ]
            in
            let s', _ =
-             ok_or_fail (Rules.resolve_action 2 (Turn.Play blk) None s)
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club3) None s)
            in
-           assert_equal None s'.State.pending );
-         ( "ArrowStorm not blocked by Attack card" >:: fun _ ->
-           let s =
-             two_player_game () |> set_hand 2 [ atk ] |> with_pending 1 2 1
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play blk) None s')
            in
-           match Rules.resolve_action 2 (Turn.Play atk) None s with
-           | Error _ -> ()
-           | Ok _ -> assert_failure "expected Error" );
+           (match s''.State.pending with
+           | Some p -> assert_equal [ 3 ] p.State.target_ids
+           | None -> assert_failure "expected pending attack");
+           let s''', _ =
+             ok_or_fail (Rules.resolve_action 3 Turn.Pass None s'')
+           in
+           let p3 = get_player 3 s''' in
+           assert_equal ~printer:string_of_int 6 p3.Player.lives );
          (* ── Rules: Chaos (2♣) ── *)
          ( "Chaos effect_of_card returns NoEffect" >:: fun _ ->
            assert_equal Types.NoEffect (Rules.effect_of_card club2) );
          ( "Chaos sets ByAttack pending" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ club2 ] in
            let s', _ =
-             ok_or_fail (Rules.resolve_action 1 (Turn.Play club2) (Some 2) s)
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club2) None s)
            in
            match s'.State.pending with
-           | Some p -> assert_equal State.ByAttack p.State.block_with
+           | Some p ->
+               assert_equal State.ByAttack p.State.block_with;
+               assert_equal [ 2; 1 ] p.State.target_ids
            | None -> assert_failure "expected pending attack" );
-         ( "Chaos without target returns error" >:: fun _ ->
+         ( "Chaos with target returns error" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ club2 ] in
-           match Rules.resolve_action 1 (Turn.Play club2) None s with
+           match Rules.resolve_action 1 (Turn.Play club2) (Some 2) s with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
          ( "Chaos increments attacks_used" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ club2 ] in
            let s', _ =
-             ok_or_fail (Rules.resolve_action 1 (Turn.Play club2) (Some 2) s)
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club2) None s)
            in
            assert_equal ~printer:string_of_int 1 s'.State.attacks_used );
          ( "Chaos countered by Attack card" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 2 [ atk ]
-             |> with_chaos_pending 1 2 1
+             |> with_chaos_pending 1 [ 2; 1 ] 1
            in
            let s', _ =
              ok_or_fail (Rules.resolve_action 2 (Turn.Play atk) None s)
            in
-           assert_equal None s'.State.pending );
+           match s'.State.pending with
+           | Some p -> assert_equal [ 1 ] p.State.target_ids
+           | None -> assert_failure "expected self-target pending" );
          ( "Chaos not countered by Block card" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 2 [ blk ]
-             |> with_chaos_pending 1 2 1
+             |> with_chaos_pending 1 [ 2; 1 ] 1
            in
            match Rules.resolve_action 2 (Turn.Play blk) None s with
            | Error _ -> ()
@@ -843,7 +856,7 @@ let tests =
          ( "Chaos pass takes damage" >:: fun _ ->
            let s =
              two_player_game () |> set_player_lives 2 5
-             |> with_chaos_pending 1 2 1
+             |> with_chaos_pending 1 [ 2; 1 ] 1
            in
            let s', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s) in
            let p2 = get_player 2 s' in

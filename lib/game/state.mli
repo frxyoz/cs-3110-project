@@ -17,7 +17,7 @@ type block_type =
 
 type pending_attack = {
   attacker_id : int;
-  target_id : int;
+  target_ids : int list;
   damage : int;
   block_with : block_type;
 }
@@ -63,6 +63,7 @@ val update_player : Player.t -> t -> t
 val current_player : t -> Player.t option
 val next_turn : t -> t
 val set_pending : int -> int -> int -> block_type -> t -> t
+val set_pending_targets : int -> int list -> int -> block_type -> t -> t
 val clear_pending : t -> t
 val start_game : t -> t
 val check_game_over : t -> t
