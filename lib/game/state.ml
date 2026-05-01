@@ -42,6 +42,7 @@ type pending_sayno_effect =
 
 type pending_sayno = {
   source_id : int;
+  source_card : Types.card;
   waiting_on : int list;
   resolution : pending_sayno_effect;
 }
@@ -203,9 +204,12 @@ let set_pending_dmg (actor_id : int) (played_card : Types.card)
         };
   }
 
-let set_pending_sayno (source_id : int) (resolution : pending_sayno_effect)
-    (waiting_on : int list) (s : t) : t =
-  { s with pending_sayno = Some { source_id; waiting_on; resolution } }
+let set_pending_sayno (source_id : int) (source_card : Types.card)
+    (resolution : pending_sayno_effect) (waiting_on : int list) (s : t) : t =
+  {
+    s with
+    pending_sayno = Some { source_id; source_card; waiting_on; resolution };
+  }
 
 let dmg_respond (responder_id : int) (played : bool) (s : t) : t =
   match s.pending_dmg with
@@ -302,27 +306,43 @@ let resolve_sayno (s : t) : t =
                 update_player (Player.modify_lives 1 actor) s'
                 |> check_game_over
           else set_pending_dmg psay.source_id played_card holders s'
-      | Diplomacy joins -> (
-          match find_player psay.source_id s' with
-          | None -> s'
-          | Some actor ->
-              let actor' = Player.modify_lives 1 actor in
-              let s'' = update_player actor' s' in
-              let rec apply_joins st = function
-                | [] -> st
-                | (joiner_id, card) :: rest ->
-                    let st =
-                      match find_player joiner_id st with
-                      | None -> st
-                      | Some joiner ->
-                          update_player (Player.modify_lives 1 joiner) st
-                    in
-                    let st =
-                      match find_player psay.source_id st with
-                      | None -> st
-                      | Some source ->
-                          update_player (Player.force_add card source) st
-                    in
-                    apply_joins (remove_from_discard card st) rest
+      | Diplomacy joins ->
+          let joiners = List.rev joins in
+          (* [first_joiner; ...; last_joiner] *)
+          let all_players = (psay.source_id, psay.source_card) :: joiners in
+          let s'' = s' in
+          let s''' =
+            List.fold_left
+              (fun st (id, _) ->
+                match find_player id st with
+                | None -> st
+                | Some player -> update_player (Player.modify_lives 1 player) st)
+              s'' all_players
+          in
+          let rec swap_cards st i =
+            if i >= List.length all_players - 1 then st
+            else
+              let id1, card1 = List.nth all_players i in
+              let id2, card2 = List.nth all_players (i + 1) in
+              let st =
+                match find_player id1 st with
+                | None -> st
+                | Some player ->
+                    update_player (Player.force_add card2 player) st
               in
-              apply_joins s'' (List.rev joins) |> check_game_over))
+              let st =
+                match find_player id2 st with
+                | None -> st
+                | Some player ->
+                    update_player (Player.force_add card1 player) st
+              in
+              swap_cards st (i + 1)
+          in
+          let s'''' = swap_cards s''' 0 in
+          let all_cards = List.map snd joiners in
+          let s''''' =
+            List.fold_left
+              (fun st card -> remove_from_discard card st)
+              s'''' all_cards
+          in
+          s''''' |> check_game_over)

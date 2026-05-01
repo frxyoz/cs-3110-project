@@ -533,6 +533,25 @@ let tests =
            let p1 = get_player 1 s'' in
            assert_equal ~printer:string_of_int 5 p1.Player.lives;
            assert_equal None s''.State.pending_sayno );
+         ( "Reversify cancels heal and gives the source card to the responder"
+         >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ heal ] |> set_hand 2 [ diam3 ]
+             |> set_player_lives 1 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
+           in
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play diam3) None s')
+           in
+           let p1 = get_player 1 s'' in
+           let p2 = get_player 2 s'' in
+           assert_equal ~printer:string_of_int 5 p1.Player.lives;
+           assert_equal ~printer:string_of_int 1 (List.length p2.Player.hand);
+           assert_equal heal (List.hd p2.Player.hand);
+           assert_equal diam3 (List.hd s''.State.discard);
+           assert_equal None s''.State.pending_sayno );
          ( "play diplomacy opens Say No window" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ diam4 ] in
            let s', _ =
@@ -560,7 +579,8 @@ let tests =
            assert_equal ~printer:string_of_int 6 p2.Player.lives;
            assert_equal ~printer:string_of_int 1 (List.length p1.Player.hand);
            assert_equal atk (List.hd p1.Player.hand);
-           assert_equal ~printer:string_of_int 0 (List.length p2.Player.hand);
+           assert_equal ~printer:string_of_int 1 (List.length p2.Player.hand);
+           assert_equal diam4 (List.hd p2.Player.hand);
            assert_equal diam4 (List.hd s'''.State.discard) );
          ( "diplomacy gives a life even when nobody joins" >:: fun _ ->
            let s =
@@ -605,6 +625,22 @@ let tests =
            assert_equal ~printer:string_of_int 6 p2.Player.lives;
            assert_equal ~printer:string_of_int 6 p3.Player.lives;
            assert_equal red_joker (List.hd s'.State.discard) );
+         ( "garbage disposal takes top card from discard" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ club4 ] in
+           let s = State.onto_discard atk s in
+           (* add a card to discard *)
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club4) None s)
+           in
+           let p1 = get_player 1 s' in
+           assert_equal ~printer:string_of_int 1 (List.length p1.Player.hand);
+           assert_equal atk (List.hd p1.Player.hand);
+           assert_equal club4 (List.hd s'.State.discard) );
+         ( "garbage disposal fails if discard is empty" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ club4 ] in
+           match Rules.resolve_action 1 (Turn.Play club4) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
          ( "play block with no pending returns error" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ blk ] in
            match Rules.resolve_action 1 (Turn.Play blk) None s with

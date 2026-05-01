@@ -152,11 +152,18 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
               msg p.State.dmg_actor_id outcome )
     | _ -> Ok (s', msg)
   in
+  let remove_from_discard card (state : State.t) =
+    let rec aux = function
+      | [] -> []
+      | x :: rest -> if x = card then rest else x :: aux rest
+    in
+    { state with discard = aux state.discard }
+  in
   let start_sayno c resolution msg =
     let waiting_on = alive_other_players actor_id s in
     let s' =
       State.apply_card actor_id c s
-      |> State.set_pending_sayno actor_id resolution waiting_on
+      |> State.set_pending_sayno actor_id c resolution waiting_on
     in
     match s'.State.pending_sayno with
     | Some p when p.State.waiting_on = [] -> Ok (State.resolve_sayno s', msg)
@@ -167,6 +174,28 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
     | Turn.Play c -> (
         match card_type_of_card c with
         | Special SayNo -> Error "Say No can only be played as a response."
+        | Special Reversify ->
+            Error "Reversify can only be played as a response."
+        | Special GarbageDisposal -> (
+            match s.State.discard with
+            | [] -> Error "No cards in discard pile to take."
+            | top :: _ -> (
+                let s' = remove_from_discard top s in
+                let s'' = State.apply_card actor_id c s' in
+                match State.find_player actor_id s'' with
+                | None ->
+                    Ok
+                      ( s'',
+                        Printf.sprintf "Player %d played Garbage Disposal."
+                          actor_id )
+                | Some player ->
+                    let player' = Player.force_add top player in
+                    let s''' = State.update_player player' s'' in
+                    Ok
+                      ( s''',
+                        Printf.sprintf
+                          "Player %d took the top card from the discard pile!"
+                          actor_id )))
         | Special Chaos ->
             execute_attack actor_id c target_id 1 State.ByAttack
               (fun tid ->
@@ -260,7 +289,26 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
     | Some p when List.mem actor_id p.State.waiting_on -> (
         match action with
         | Turn.Play c ->
-            if
+            if card_type_of_card c = Special Reversify then
+              let s' =
+                State.apply_card actor_id c s |> fun st ->
+                { st with State.pending_sayno = None }
+              in
+              let s'' =
+                match State.find_player actor_id s' with
+                | None -> s'
+                | Some responder ->
+                    let s'' = remove_from_discard p.State.source_card s' in
+                    State.update_player
+                      (Player.force_add p.State.source_card responder)
+                      s''
+              in
+              Ok
+                ( s'',
+                  Printf.sprintf
+                    "Player %d reversed the action and took the card!" actor_id
+                )
+            else if
               p.State.resolution = Diplomacy []
               ||
               match p.State.resolution with
@@ -294,7 +342,10 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                 { st with State.pending_sayno = None }
               in
               Ok (s', Printf.sprintf "Player %d said no!" actor_id)
-            else Error "You can only play Say No or pass during this response."
+            else
+              Error
+                "You can only play Say No, Reversify, or pass during this \
+                 response."
         | Turn.Pass -> (
             let s' = State.sayno_respond actor_id false s in
             match s'.State.pending_sayno with

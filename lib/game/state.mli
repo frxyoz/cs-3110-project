@@ -37,6 +37,7 @@ type pending_sayno_effect =
 
 type pending_sayno = {
   source_id : int;
+  source_card : Types.card;
   waiting_on : int list;
   resolution : pending_sayno_effect;
 }
@@ -73,7 +74,10 @@ val apply_card : int -> Types.card -> t -> t
 val set_pending_dmg : int -> Types.card -> int list -> t -> t
 val dmg_respond : int -> bool -> t -> t
 val resolve_dmg : t -> t
-val set_pending_sayno : int -> pending_sayno_effect -> int list -> t -> t
+
+val set_pending_sayno :
+  int -> Types.card -> pending_sayno_effect -> int list -> t -> t
+
 val sayno_respond : int -> bool -> t -> t
 val diplomacy_join : int -> Types.card -> t -> t
 val resolve_sayno : t -> t
