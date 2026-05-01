@@ -35,6 +35,8 @@ type pending_sayno_effect =
   | DeadMansGamble of Types.card * int list
   | Diplomacy of (int * Types.card) list
   | Sacrifice
+  | Steal of int
+  | Break of int
 
 type pending_sayno = {
   source_id : int;

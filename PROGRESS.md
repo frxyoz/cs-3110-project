@@ -4,6 +4,7 @@
 - fixed twotomax to discard both cards when played
 - implemented reflector and sacrifice
 - fixed turn error. passes on special cards or passes as a response to a card are no longer counted as a turn for a player
+- implemented break and steal. **this must be updated when equips are implemented because the player is able to choose which equip to break or steal. as of now a random card is broken/stolen
 ## 2026-04-30 (Isabella)
 - fixed arrowstorm, chaos, and diplomacy
 - implemented reversify, garbage disposal, and draw2
@@ -31,7 +32,7 @@
 ### What is NOT yet implemented (pick up from here)
 - IMPLEMENT ACES NEXT! - other things are dependent on this
 - or IMPLEMENT JUDGEMENT!
-
+- have the first person who joins start the game
 - `resolve_action` for remaining **diamonds specials**: Silencer (6♦), DoubleAgent (7♦), SummonLightning (8♦). These all require judgement
 - `resolve_action` for **clubs 4–6**: LifeLock (5♣), Reduction (6♣)(aces should be implemented before reduction)
 - `resolve_action` for **face cards**: Jack (Break), Queen (Steal), King (Heal or Double Attack when played with an attack card)
@@ -42,3 +43,4 @@
 - **Turn rotation** and round-start logic (who goes first, rotating each round)
 - **Life Lock** interaction: tracking linked players, breaking when they attack each other
 - **Server / game loop** wiring: nothing connects `resolve_action` to actual player I/O yet
+

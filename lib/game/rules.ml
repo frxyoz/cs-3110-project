@@ -273,6 +273,33 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                    "Player %d played TwoToMax. Waiting for possible \
                     interception."
                    actor_id)
+        | Special Steal -> (
+            match target_id with
+            | None -> Error "Steal requires a target."
+            | Some tid when tid = actor_id ->
+                Error "You cannot steal from yourself."
+            | Some tid -> (
+                match State.find_player tid s with
+                | None -> Error "Target player not found."
+                | Some _ ->
+                    start_sayno c (Steal tid)
+                      (Printf.sprintf
+                         "Player %d played Steal on player %d. Waiting for \
+                          possible interception."
+                         actor_id tid)))
+        | Special Break -> (
+            match target_id with
+            | None -> Error "Break requires a target."
+            | Some tid when tid = actor_id -> Error "You cannot break yourself."
+            | Some tid -> (
+                match State.find_player tid s with
+                | None -> Error "Target player not found."
+                | Some _ ->
+                    start_sayno c (Break tid)
+                      (Printf.sprintf
+                         "Player %d played Break on player %d. Waiting for \
+                          possible interception."
+                         actor_id tid)))
         | Special SayNo -> Error "Say No can only be played as a response."
         | Special Reversify ->
             Error "Reversify can only be played as a response."

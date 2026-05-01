@@ -40,6 +40,8 @@ type pending_sayno_effect =
   | DeadMansGamble of Types.card * int list
   | Diplomacy of (int * Types.card) list
   | Sacrifice
+  | Steal of int
+  | Break of int
 
 type pending_sayno = {
   source_id : int;
@@ -332,6 +334,43 @@ let resolve_sayno (s : t) : t =
                 Player.modify_lives (-3) actor |> Player.set_max_lives 1
               in
               update_player actor' s' |> check_game_over)
+      | Steal target_id -> (
+          match find_player psay.source_id s' with
+          | None -> s'
+          | Some actor -> (
+              match find_player target_id s' with
+              | None -> s'
+              | Some target -> (
+                  match target.Player.hand with
+                  | [] -> s'
+                  | hand ->
+                      let idx = Random.int (List.length hand) in
+                      let rec pick i = function
+                        | [] -> assert false
+                        | x :: xs -> if i = 0 then x else pick (i - 1) xs
+                      in
+                      let stolen = pick idx hand in
+                      let target' = Player.remove_from_hand stolen target in
+                      let actor' = Player.force_add stolen actor in
+                      update_player actor' (update_player target' s'))))
+      | Break target_id -> (
+          match find_player psay.source_id s' with
+          | None -> s'
+          | Some _ -> (
+              match find_player target_id s' with
+              | None -> s'
+              | Some target -> (
+                  match target.Player.hand with
+                  | [] -> s'
+                  | hand ->
+                      let idx = Random.int (List.length hand) in
+                      let rec pick i = function
+                        | [] -> assert false
+                        | x :: xs -> if i = 0 then x else pick (i - 1) xs
+                      in
+                      let broken = pick idx hand in
+                      let target' = Player.remove_from_hand broken target in
+                      update_player target' (onto_discard broken s'))))
       | Diplomacy joins ->
           let joiners = List.rev joins in
           (* [first_joiner; ...; last_joiner] *)

@@ -431,6 +431,63 @@ let tests =
          ( "King is Special HealOrDoubleAttack" >:: fun _ ->
            assert_equal (Types.Special Types.HealOrDoubleAttack)
              (Rules.card_type_of_card king) );
+         ( "Steal requires a target" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ queen ] |> set_hand 2 [ atk ]
+           in
+           match Rules.resolve_action 1 (Turn.Play queen) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "Steal opens Say No window" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ queen ] |> set_hand 2 [ atk ]
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play queen) (Some 2) s)
+           in
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "Steal transfers a target card on resolve" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ queen ] |> set_hand 2 [ atk ]
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play queen) (Some 2) s)
+           in
+           let s'' = State.resolve_sayno s' in
+           let p1 = get_player 1 s'' in
+           let p2 = get_player 2 s'' in
+           assert_equal ~printer:string_of_int 1 (List.length p1.Player.hand);
+           assert_equal ~printer:string_of_int 0 (List.length p2.Player.hand);
+           assert_equal [ atk ] p1.Player.hand );
+         ( "Break requires a target" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ jack ] |> set_hand 2 [ atk ]
+           in
+           match Rules.resolve_action 1 (Turn.Play jack) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "Break opens Say No window" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ jack ] |> set_hand 2 [ atk ]
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play jack) (Some 2) s)
+           in
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "Break discards a target card on resolve" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ jack ] |> set_hand 2 [ atk ]
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play jack) (Some 2) s)
+           in
+           let s'' = State.resolve_sayno s' in
+           let p1 = get_player 1 s'' in
+           let p2 = get_player 2 s'' in
+           assert_equal ~printer:string_of_int 0 (List.length p1.Player.hand);
+           assert_equal ~printer:string_of_int 0 (List.length p2.Player.hand);
+           assert_equal ~printer:string_of_int 2 (List.length s''.State.discard);
+           assert_equal atk (List.hd s''.State.discard) );
          ( "black joker is Special BlackJoker" >:: fun _ ->
            assert_equal (Types.Special Types.BlackJoker)
              (Rules.card_type_of_card black_joker) );
@@ -566,8 +623,7 @@ let tests =
            assert_equal heal (List.hd p2.Player.hand);
            assert_equal diam3 (List.hd s''.State.discard);
            assert_equal None s''.State.pending_sayno );
-         ( "Reflector resolves heal and costs the responder a life"
-         >:: fun _ ->
+         ( "Reflector resolves heal and costs the responder a life" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ heal ] |> set_hand 2 [ diam9 ]
              |> set_player_lives 1 5 |> set_player_lives 2 5
