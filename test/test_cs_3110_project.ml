@@ -339,6 +339,20 @@ let tests =
              (Rules.special_type_of_card diam4) );
          ( "5♦ is Draw2" >:: fun _ ->
            assert_equal (Some Types.Draw2) (Rules.special_type_of_card diam5) );
+         ( "Draw2 draws two cards" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ diam5 ] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play diam5) None s)
+           in
+           let p1 = get_player 1 s' in
+           assert_equal ~printer:string_of_int 2 (List.length p1.Player.hand) );
+         ( "Draw2 discards the played card" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ diam5 ] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play diam5) None s)
+           in
+           assert_equal ~printer:string_of_int 1 (List.length s'.State.discard);
+           assert_equal diam5 (List.hd s'.State.discard) );
          ( "6♦ is Silencer" >:: fun _ ->
            assert_equal (Some Types.Silencer) (Rules.special_type_of_card diam6)
          );

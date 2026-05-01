@@ -279,6 +279,26 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
             start_sayno c (Diplomacy [])
               (Printf.sprintf
                  "Player %d played Diplomacy. Waiting for responses." actor_id)
+        | Special Draw2 ->
+            let s' = State.apply_card actor_id c s in
+            let s'' =
+              match State.find_player actor_id s' with
+              | None -> s'
+              | Some actor ->
+                  let actor', state' = State.draw_one actor s' in
+                  State.update_player actor' state'
+            in
+            let s''' =
+              match State.find_player actor_id s'' with
+              | None -> s''
+              | Some actor ->
+                  let actor', state' = State.draw_one actor s'' in
+                  State.update_player actor' state'
+            in
+            Ok
+              ( s''',
+                Printf.sprintf "Player %d played Draw 2: they drew 2 cards!"
+                  actor_id )
         | Special BlackJoker ->
             let s' =
               State.apply_card actor_id c s

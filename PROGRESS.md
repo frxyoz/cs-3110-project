@@ -1,5 +1,10 @@
 # Progress Log
 
+## 2026-04-30 (Isabella)
+- fixed arrowstorm, chaos, and diplomacy
+- implemented reversify and garbage disposal
+
+
 ## 2026-04-28 (Tran)
 
 ### Done
@@ -18,10 +23,12 @@
 - Implemented `resolve_action` for **Jokers**: Black Joker (AOE −1) and Red Joker (AOE +1)
 - Added 153 unit tests (all passing) covering Player, Deck, State, and the above Rules logic
 
+
 ### What is NOT yet implemented (pick up from here)
-- `resolve_action` for remaining **diamonds specials**: Reversify (3♦), Silencer (6♦), DoubleAgent (7♦), SummonLightning (8♦), Reflector (9♦), Sacrifice (10♦)
-- `resolve_action` for **clubs 4–6**: GarbageDisposal (4♣), LifeLock (5♣), Reduction (6♣)
-- `resolve_action` for **face cards**: Jack (Break), Queen (Steal), King (Heal or Double Attack)
+- an error when passing special cards, counts pass as a turn? which results in a player's turn getting skipped
+- `resolve_action` for remaining **diamonds specials**: Silencer (6♦), DoubleAgent (7♦), SummonLightning (8♦), Reflector (9♦), Sacrifice (10♦)
+- `resolve_action` for **clubs 4–6**: LifeLock (5♣), Reduction (6♣)(aces should be implemented before reduction)
+- `resolve_action` for **face cards**: Jack (Break), Queen (Steal), King (Heal or Double Attack when played with an attack card)
 - **Equipment resolve**: equipping Aces, UnlimitedAttack bypassing `attacks_used`, BlockHealReverse swapping block↔heal, Unblockable preventing instant response, Random50 50/50 flip
 - **Judgment phase** logic: flip top card, red/black determines if card goes through
 - **Draw phase** tests (`do_draw_phase` exists but is untested)
