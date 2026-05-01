@@ -2,7 +2,7 @@
 
 ## 2026-04-30 (Isabella)
 - fixed arrowstorm, chaos, and diplomacy
-- implemented reversify and garbage disposal
+- implemented reversify, garbage disposal, and draw2
 
 
 ## 2026-04-28 (Tran)
@@ -25,7 +25,10 @@
 
 
 ### What is NOT yet implemented (pick up from here)
-- an error when passing special cards, counts pass as a turn? which results in a player's turn getting skipped
+isabella's opinion on what should be worked on next:
+- 1) an error when passing special cards, counts pass as a turn? which results in a player's turn getting skipped
+- 2) IMPLEMENT ACES NEXT! - other things are dependent on this
+
 - `resolve_action` for remaining **diamonds specials**: Silencer (6♦), DoubleAgent (7♦), SummonLightning (8♦), Reflector (9♦), Sacrifice (10♦)
 - `resolve_action` for **clubs 4–6**: LifeLock (5♣), Reduction (6♣)(aces should be implemented before reduction)
 - `resolve_action` for **face cards**: Jack (Break), Queen (Steal), King (Heal or Double Attack when played with an attack card)
