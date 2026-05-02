@@ -5,6 +5,7 @@
 - implemented reflector and sacrifice
 - fixed turn error. passes on special cards or passes as a response to a card are no longer counted as a turn for a player
 - implemented break and steal. **this must be updated when equips are implemented because the player is able to choose which equip to break or steal. as of now a random card is broken/stolen
+- implemented healordouble attack. all face cards are done for now
 ## 2026-04-30 (Isabella)
 - fixed arrowstorm, chaos, and diplomacy
 - implemented reversify, garbage disposal, and draw2
@@ -35,7 +36,6 @@
 - have the first person who joins start the game
 - `resolve_action` for remaining **diamonds specials**: Silencer (6♦), DoubleAgent (7♦), SummonLightning (8♦). These all require judgement
 - `resolve_action` for **clubs 4–6**: LifeLock (5♣), Reduction (6♣)(aces should be implemented before reduction)
-- `resolve_action` for **face cards**:  King (Heal or Double Attack when played with an attack card)
 - **Equipment resolve**: equipping Aces, UnlimitedAttack bypassing `attacks_used`, BlockHealReverse swapping block↔heal, Unblockable preventing instant response, Random50 50/50 flip
 - **Judgment phase** logic: flip top card, red/black determines if card goes through
 - **Draw phase** tests (`do_draw_phase` exists but is untested)
