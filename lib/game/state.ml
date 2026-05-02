@@ -42,6 +42,7 @@ type pending_sayno_effect =
   | Sacrifice
   | Steal of int
   | Break of int
+  | HealOrDoubleAttack of int
 
 type pending_sayno = {
   source_id : int;
@@ -371,6 +372,9 @@ let resolve_sayno (s : t) : t =
                       let broken = pick idx hand in
                       let target' = Player.remove_from_hand broken target in
                       update_player target' (onto_discard broken s'))))
+      | HealOrDoubleAttack target_id ->
+          let s'' = set_pending psay.source_id target_id 2 ByBlock s' in
+          { s'' with attacks_used = s''.attacks_used + 1 }
       | Diplomacy joins ->
           let joiners = List.rev joins in
           (* [first_joiner; ...; last_joiner] *)

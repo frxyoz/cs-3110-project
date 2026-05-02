@@ -35,7 +35,7 @@
 - have the first person who joins start the game
 - `resolve_action` for remaining **diamonds specials**: Silencer (6♦), DoubleAgent (7♦), SummonLightning (8♦). These all require judgement
 - `resolve_action` for **clubs 4–6**: LifeLock (5♣), Reduction (6♣)(aces should be implemented before reduction)
-- `resolve_action` for **face cards**: Jack (Break), Queen (Steal), King (Heal or Double Attack when played with an attack card)
+- `resolve_action` for **face cards**:  King (Heal or Double Attack when played with an attack card)
 - **Equipment resolve**: equipping Aces, UnlimitedAttack bypassing `attacks_used`, BlockHealReverse swapping block↔heal, Unblockable preventing instant response, Random50 50/50 flip
 - **Judgment phase** logic: flip top card, red/black determines if card goes through
 - **Draw phase** tests (`do_draw_phase` exists but is untested)

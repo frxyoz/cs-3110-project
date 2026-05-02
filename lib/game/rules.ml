@@ -273,33 +273,56 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                    "Player %d played TwoToMax. Waiting for possible \
                     interception."
                    actor_id)
-        | Special Steal -> (
+        | Special HealOrDoubleAttack -> (
             match target_id with
-            | None -> Error "Steal requires a target."
+            | None ->
+                start_sayno c (Heal 1)
+                  (Printf.sprintf
+                     "Player %d played a heal. Waiting for possible \
+                      interception."
+                     actor_id)
             | Some tid when tid = actor_id ->
-                Error "You cannot steal from yourself."
+                Error "You cannot attack yourself."
             | Some tid -> (
-                match State.find_player tid s with
-                | None -> Error "Target player not found."
-                | Some _ ->
-                    start_sayno c (Steal tid)
-                      (Printf.sprintf
-                         "Player %d played Steal on player %d. Waiting for \
-                          possible interception."
-                         actor_id tid)))
-        | Special Break -> (
-            match target_id with
-            | None -> Error "Break requires a target."
-            | Some tid when tid = actor_id -> Error "You cannot break yourself."
-            | Some tid -> (
-                match State.find_player tid s with
-                | None -> Error "Target player not found."
-                | Some _ ->
-                    start_sayno c (Break tid)
-                      (Printf.sprintf
-                         "Player %d played Break on player %d. Waiting for \
-                          possible interception."
-                         actor_id tid)))
+                let* actor = get_player actor_id in
+                let attack_card_opt =
+                  List.find_opt
+                    (fun card ->
+                      match effect_of_card card with
+                      | Attack _ -> true
+                      | _ -> false)
+                    actor.Player.hand
+                in
+                match attack_card_opt with
+                | None ->
+                    Error
+                      "HealOrDoubleAttack requires an attack card in hand to \
+                       become a double attack."
+                | Some attack_card -> (
+                    let s' = State.apply_card actor_id attack_card s in
+                    let s'' = State.apply_card actor_id c s' in
+                    let waiting_on = alive_other_players actor_id s in
+                    let s''' =
+                      State.set_pending_sayno actor_id c
+                        (HealOrDoubleAttack tid) waiting_on s''
+                    in
+                    match s'''.State.pending_sayno with
+                    | Some p when p.State.waiting_on = [] ->
+                        Ok
+                          ( State.resolve_sayno s''',
+                            Printf.sprintf
+                              "Player %d played HealOrDoubleAttack as a double \
+                               attack on player %d! Player %d must block or \
+                               pass."
+                              actor_id tid tid )
+                    | _ ->
+                        Ok
+                          ( s''',
+                            Printf.sprintf
+                              "Player %d played HealOrDoubleAttack as a double \
+                               attack on player %d. Waiting for possible \
+                               interception."
+                              actor_id tid ))))
         | Special SayNo -> Error "Say No can only be played as a response."
         | Special Reversify ->
             Error "Reversify can only be played as a response."
@@ -335,6 +358,33 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                  "Player %d played Sacrifice. Waiting for possible \
                   interception."
                  actor_id)
+        | Special Steal -> (
+            match target_id with
+            | None -> Error "Steal requires a target."
+            | Some tid when tid = actor_id ->
+                Error "You cannot steal from yourself."
+            | Some tid -> (
+                match State.find_player tid s with
+                | None -> Error "Target player not found."
+                | Some _ ->
+                    start_sayno c (Steal tid)
+                      (Printf.sprintf
+                         "Player %d played Steal on player %d. Waiting for \
+                          possible interception."
+                         actor_id tid)))
+        | Special Break -> (
+            match target_id with
+            | None -> Error "Break requires a target."
+            | Some tid when tid = actor_id -> Error "You cannot break yourself."
+            | Some tid -> (
+                match State.find_player tid s with
+                | None -> Error "Target player not found."
+                | Some _ ->
+                    start_sayno c (Break tid)
+                      (Printf.sprintf
+                         "Player %d played Break on player %d. Waiting for \
+                          possible interception."
+                         actor_id tid)))
         | Special BlackJoker ->
             let s' =
               State.apply_card actor_id c s

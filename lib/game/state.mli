@@ -37,6 +37,7 @@ type pending_sayno_effect =
   | Sacrifice
   | Steal of int
   | Break of int
+  | HealOrDoubleAttack of int
 
 type pending_sayno = {
   source_id : int;

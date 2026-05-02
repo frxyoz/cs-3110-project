@@ -431,6 +431,40 @@ let tests =
          ( "King is Special HealOrDoubleAttack" >:: fun _ ->
            assert_equal (Types.Special Types.HealOrDoubleAttack)
              (Rules.card_type_of_card king) );
+         ( "HealOrDoubleAttack heals with no target" >:: fun _ ->
+           let s =
+             two_player_game () |> set_player_lives 1 5 |> set_hand 1 [ king ]
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play king) None s)
+           in
+           let s'' = State.resolve_sayno s' in
+           let p1 = get_player 1 s'' in
+           assert_equal ~printer:string_of_int 6 p1.Player.lives );
+         ( "HealOrDoubleAttack requires an attack card to double attack"
+         >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ king; blk ] in
+           match Rules.resolve_action 1 (Turn.Play king) (Some 2) s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "HealOrDoubleAttack becomes double attack on a target" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ king; atk ] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play king) (Some 2) s)
+           in
+           match s'.State.pending_sayno with
+           | Some p -> (
+               match p.State.resolution with
+               | State.HealOrDoubleAttack tid ->
+                   assert_equal ~printer:string_of_int 2 tid
+               | _ -> assert_failure "expected HealOrDoubleAttack resolution")
+           | None -> assert_failure "expected pending Say No" );
+         ( "HealOrDoubleAttack discards attack card before king" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ king; atk ] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play king) (Some 2) s)
+           in
+           assert_equal [ king; atk ] s'.State.discard );
          ( "Steal requires a target" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ queen ] |> set_hand 2 [ atk ]
