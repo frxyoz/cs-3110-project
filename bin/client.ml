@@ -300,12 +300,6 @@ let card_description (c : Types.card) : string list =
       else [ "Devil"; "Attack all" ]
   | Types.Ace -> (
       match c.Types.suit with
-      | Types.Clubs ->
-          [
-            "EQUIP: 50/50";
-            "Half chance an attack";
-            "goes through (black=-1 life)";
-          ]
       | Types.Spades ->
           [
             "EQUIP: Unlimited attack";
@@ -318,11 +312,17 @@ let card_description (c : Types.card) : string list =
             "Use blocks as heals";
             "and heals as blocks";
           ]
-      | Types.Diamonds ->
+      | Types.Clubs ->
           [
             "EQUIP: Unblockable attacks";
             "Cannot immediately respond";
             "to attacks from you";
+          ]
+      | Types.Diamonds ->
+          [
+            "EQUIP: 50/50";
+            "Half chance an attack";
+            "goes through when you pass";
           ])
   | Types.Jack ->
       [ "Break"; "Take someone's card + discard"; "Can break equips" ]

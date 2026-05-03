@@ -7,10 +7,19 @@ type t = {
   lives : int;
   max_lives : int;
   hand : card list;
+  equips : equipment_type list;
 }
 
 let make_player (id : int) (name : string) : t =
-  { id; name; lives = 7; max_lives = 7; hand = [] }
+  { id; name; lives = 7; max_lives = 7; hand = []; equips = [] }
+
+let has_equip (eq : equipment_type) (p : t) : bool = List.mem eq p.equips
+
+let add_equip (eq : equipment_type) (p : t) : t =
+  if has_equip eq p then p else { p with equips = eq :: p.equips }
+
+let remove_equip (eq : equipment_type) (p : t) : t =
+  { p with equips = List.filter (fun e -> e <> eq) p.equips }
 
 let is_alive (p : t) : bool = p.lives >= 1
 

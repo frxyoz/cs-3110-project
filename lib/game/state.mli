@@ -38,6 +38,7 @@ type pending_sayno_effect =
   | Steal of int
   | Break of int
   | HealOrDoubleAttack of int
+  | Equip of Types.equipment_type
 
 type pending_sayno = {
   source_id : int;

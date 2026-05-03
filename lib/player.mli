@@ -4,6 +4,7 @@ type t = {
   lives : int;
   max_lives : int;
   hand : Types.card list;
+  equips : Types.equipment_type list;
 }
 
 val make_player : int -> string -> t
@@ -14,3 +15,6 @@ val modify_lives : int -> t -> t
 val add_to_hand : Types.card -> t -> t
 val force_add : Types.card -> t -> t
 val remove_from_hand : Types.card -> t -> t
+val has_equip : Types.equipment_type -> t -> bool
+val add_equip : Types.equipment_type -> t -> t
+val remove_equip : Types.equipment_type -> t -> t

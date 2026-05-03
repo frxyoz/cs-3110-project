@@ -127,7 +127,12 @@ let alive_other_players (actor_id : int) (s : State.t) : int list =
 let execute_attack (actor_id : int) (c : card) (target_id : int option)
     (dmg : int) (block_with : State.block_type) (msg : int -> string)
     (s : State.t) : (State.t * string, string) result =
-  if s.State.attacks_used >= 1 then
+  let actor_unlimited =
+    match State.find_player actor_id s with
+    | Some p -> Player.has_equip UnlimitedAttack p
+    | None -> false
+  in
+  if s.State.attacks_used >= 1 && not actor_unlimited then
     Error "You have already used your one attack this round."
   else
     match target_id with
@@ -407,6 +412,12 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                 Printf.sprintf
                   "Player %d played the red joker: all players gain 1 life."
                   actor_id )
+        | Equipment eq_type ->
+            start_sayno c (State.Equip eq_type)
+              (Printf.sprintf
+                 "Player %d played an equipment card. Waiting for possible \
+                  interception."
+                 actor_id)
         | _ -> (
             match effect_of_card c with
             | Attack dmg ->
@@ -423,7 +434,19 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                      "Player %d played a heal. Waiting for possible \
                       interception."
                      actor_id)
-            | Block -> Error "No attack is pending — nothing to block."
+            | Block ->
+                let actor_bhr =
+                  match State.find_player actor_id s with
+                  | Some p -> Player.has_equip BlockHealReverse p
+                  | None -> false
+                in
+                if actor_bhr then
+                  start_sayno c (Heal 1)
+                    (Printf.sprintf
+                       "Player %d played a block as a heal (BlockHealReverse). \
+                        Waiting for possible interception."
+                       actor_id)
+                else Error "No attack is pending — nothing to block."
             | NoEffect -> Error "That card has no effect yet."))
     | Turn.Discard c ->
         Ok
@@ -534,33 +557,68 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
     | Some p -> (
         match current_pending_target p with
         | Some target when target = actor_id -> (
+            let attacker_unblockable =
+              match State.find_player p.State.attacker_id s with
+              | Some atk -> Player.has_equip Unblockable atk
+              | None -> false
+            in
             match action with
             | Turn.Play c ->
-                if can_counter (effect_of_card c) p.State.block_with then
+                if attacker_unblockable then
+                  Error
+                    "The attacker has Unblockable equipped — you cannot block. \
+                     Pass to take the damage (or let your 50/50 activate)."
+                else
+                  let eff = effect_of_card c in
+                  let defender_bhr =
+                    match State.find_player actor_id s with
+                    | Some p -> Player.has_equip BlockHealReverse p
+                    | None -> false
+                  in
+                  let counters =
+                    can_counter eff p.State.block_with
+                    || (defender_bhr
+                       && p.State.block_with = State.ByBlock
+                       && (match eff with Heal _ -> true | _ -> false))
+                  in
+                  if counters then
+                    let s' =
+                      State.apply_card actor_id c s |> State.clear_pending
+                    in
+                    Ok
+                      ( s',
+                        Printf.sprintf "Player %d blocked the attack!" actor_id
+                      )
+                  else
+                    Error
+                      (Printf.sprintf
+                         "You can only play a %s card in response to this \
+                          attack, or Pass to take the damage."
+                         (counter_name p.State.block_with))
+            | Turn.Pass ->
+                let* target_p = get_player actor_id in
+                let has_50_50 = Player.has_equip Random50 target_p in
+                if has_50_50 && Random.bool () then
+                  let s' = s |> State.clear_pending in
+                  Ok
+                    ( s',
+                      Printf.sprintf
+                        "Player %d's 50/50 activated — the attack was blocked!"
+                        actor_id )
+                else
+                  let target_p' =
+                    Player.modify_lives (-p.State.damage) target_p
+                  in
                   let s' =
-                    State.apply_card actor_id c s |> State.clear_pending
+                    s
+                    |> State.update_player target_p'
+                    |> State.clear_pending |> State.check_game_over
                   in
                   Ok
-                    (s', Printf.sprintf "Player %d blocked the attack!" actor_id)
-                else
-                  Error
-                    (Printf.sprintf
-                       "You can only play a %s card in response to this \
-                        attack, or Pass to take the damage."
-                       (counter_name p.State.block_with))
-            | Turn.Pass ->
-                let* target = get_player actor_id in
-                let target' = Player.modify_lives (-p.State.damage) target in
-                let s' =
-                  s
-                  |> State.update_player target'
-                  |> State.clear_pending |> State.check_game_over
-                in
-                Ok
-                  ( s',
-                    Printf.sprintf
-                      "Player %d took %d damage! (%d lives remaining)" actor_id
-                      p.State.damage target'.Player.lives )
+                    ( s',
+                      Printf.sprintf
+                        "Player %d took %d damage! (%d lives remaining)"
+                        actor_id p.State.damage target_p'.Player.lives )
             | Turn.Discard _ ->
                 Error
                   "Cannot discard while an attack is pending — block or pass.")

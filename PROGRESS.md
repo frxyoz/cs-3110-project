@@ -1,5 +1,18 @@
 # Progress Log
 
+## 2026-05-02 (Olric)
+
+- implemented equipment cards (Ace cards)
+  - added `equips : equipment_type list` field to `Player.t` with `has_equip`, `add_equip`, `remove_equip` helpers
+  - added `Equip of equipment_type` to `State.pending_sayno_effect`; equip cards now go through the interception window like other non-attack cards before resolving
+  - **UnlimitedAttack (A♠)**: bypasses the 1-attack-per-round limit in `execute_attack`
+  - **BlockHealReverse (A♥)**: playing a Heal card while under attack counts as a Block; playing a Block card on your turn acts as a Heal (+1 life)
+  - **Unblockable (A♣)**: when the attacker has this equipped, the defender cannot play a block card — they must Pass (or let their 50/50 activate)
+  - **Random50 (A♦)**: when the defender Passes on an attack, there is a 50% chance the equip absorbs the hit instead
+  - Unblockable + Random50 interact correctly: defender cannot block but 50/50 still activates on Pass
+  - `Break` and `Steal` now include equipped cards in the random selection pool (equips can be broken/stolen)
+  - fixed swapped Ace of Clubs / Ace of Diamonds descriptions in the GUI client
+
 ## 2026-04-30 (Isabella)
 
 - fixed twotomax to discard both cards when played

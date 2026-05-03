@@ -43,6 +43,28 @@ type pending_sayno_effect =
   | Steal of int
   | Break of int
   | HealOrDoubleAttack of int
+  | Equip of Types.equipment_type
+
+let card_of_equip (eq : Types.equipment_type) : Types.card =
+  match eq with
+  | Types.UnlimitedAttack ->
+      { Types.rank = Types.Ace; suit = Types.Spades; color = Types.Black }
+  | Types.BlockHealReverse ->
+      { Types.rank = Types.Ace; suit = Types.Hearts; color = Types.Red }
+  | Types.Unblockable ->
+      { Types.rank = Types.Ace; suit = Types.Clubs; color = Types.Black }
+  | Types.Random50 ->
+      { Types.rank = Types.Ace; suit = Types.Diamonds; color = Types.Red }
+
+let equip_type_of_ace (c : Types.card) : Types.equipment_type option =
+  match c.Types.rank with
+  | Types.Ace -> (
+      match c.Types.suit with
+      | Types.Spades -> Some Types.UnlimitedAttack
+      | Types.Hearts -> Some Types.BlockHealReverse
+      | Types.Clubs -> Some Types.Unblockable
+      | Types.Diamonds -> Some Types.Random50)
+  | _ -> None
 
 type pending_sayno = {
   source_id : int;
@@ -341,17 +363,23 @@ let resolve_sayno (s : t) : t =
           | Some actor -> (
               match find_player target_id s' with
               | None -> s'
-              | Some target -> (
-                  match target.Player.hand with
+              | Some target ->
+                  let equip_cards = List.map card_of_equip target.Player.equips in
+                  let pool = target.Player.hand @ equip_cards in
+                  (match pool with
                   | [] -> s'
-                  | hand ->
-                      let idx = Random.int (List.length hand) in
+                  | _ ->
+                      let idx = Random.int (List.length pool) in
                       let rec pick i = function
                         | [] -> assert false
                         | x :: xs -> if i = 0 then x else pick (i - 1) xs
                       in
-                      let stolen = pick idx hand in
-                      let target' = Player.remove_from_hand stolen target in
+                      let stolen = pick idx pool in
+                      let target' =
+                        match equip_type_of_ace stolen with
+                        | Some eq -> Player.remove_equip eq target
+                        | None -> Player.remove_from_hand stolen target
+                      in
                       let actor' = Player.force_add stolen actor in
                       update_player actor' (update_player target' s'))))
       | Break target_id -> (
@@ -360,17 +388,23 @@ let resolve_sayno (s : t) : t =
           | Some _ -> (
               match find_player target_id s' with
               | None -> s'
-              | Some target -> (
-                  match target.Player.hand with
+              | Some target ->
+                  let equip_cards = List.map card_of_equip target.Player.equips in
+                  let pool = target.Player.hand @ equip_cards in
+                  (match pool with
                   | [] -> s'
-                  | hand ->
-                      let idx = Random.int (List.length hand) in
+                  | _ ->
+                      let idx = Random.int (List.length pool) in
                       let rec pick i = function
                         | [] -> assert false
                         | x :: xs -> if i = 0 then x else pick (i - 1) xs
                       in
-                      let broken = pick idx hand in
-                      let target' = Player.remove_from_hand broken target in
+                      let broken = pick idx pool in
+                      let target' =
+                        match equip_type_of_ace broken with
+                        | Some eq -> Player.remove_equip eq target
+                        | None -> Player.remove_from_hand broken target
+                      in
                       update_player target' (onto_discard broken s'))))
       | HealOrDoubleAttack target_id ->
           let s'' = set_pending psay.source_id target_id 2 ByBlock s' in
@@ -414,4 +448,10 @@ let resolve_sayno (s : t) : t =
               (fun st card -> remove_from_discard card st)
               s'''' all_cards
           in
-          s''''' |> check_game_over)
+          s''''' |> check_game_over
+      | Equip eq_type -> (
+          match find_player psay.source_id s' with
+          | None -> s'
+          | Some actor ->
+              let actor' = Player.add_equip eq_type actor in
+              update_player actor' s'))
