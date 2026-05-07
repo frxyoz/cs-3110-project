@@ -2,4 +2,6 @@
 
 (library
  (name cs_3110_project)
- (libraries raylib lwt lwt.unix threads.posix))
+ (libraries raylib lwt lwt.unix threads.posix)
+ (instrumentation
+  (backend bisect_ppx)))

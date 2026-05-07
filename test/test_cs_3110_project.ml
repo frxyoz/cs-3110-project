@@ -36,6 +36,11 @@ let get_player pid s =
   | Some p -> p
   | None -> assert_failure (Printf.sprintf "player %d not found" pid)
 
+let add_equip_player pid eq s =
+  match State.find_player pid s with
+  | None -> s
+  | Some p -> State.update_player (Player.add_equip eq p) s
+
 (* Two-player game, started, with controlled hands. *)
 let two_player_game () =
   let s = State.make () in
@@ -201,6 +206,47 @@ let tests =
            let p = { p with Player.hand = [ card; card; card ] } in
            let p' = Player.remove_from_hand card p in
            assert_equal ~printer:string_of_int 2 (List.length p'.Player.hand) );
+         (* ── Player: equip and set_max_lives ── *)
+         ( "has_equip false by default" >:: fun _ ->
+           let p = Player.make_player 1 "Alice" in
+           assert_equal ~printer:string_of_bool false
+             (Player.has_equip Types.UnlimitedAttack p) );
+         ( "add_equip grants the equip" >:: fun _ ->
+           let p =
+             Player.make_player 1 "Alice"
+             |> Player.add_equip Types.UnlimitedAttack
+           in
+           assert_equal ~printer:string_of_bool true
+             (Player.has_equip Types.UnlimitedAttack p) );
+         ( "add_equip is idempotent" >:: fun _ ->
+           let p =
+             Player.make_player 1 "Alice"
+             |> Player.add_equip Types.UnlimitedAttack
+             |> Player.add_equip Types.UnlimitedAttack
+           in
+           assert_equal ~printer:string_of_int 1 (List.length p.Player.equips)
+         );
+         ( "remove_equip removes the equip" >:: fun _ ->
+           let p =
+             Player.make_player 1 "Alice"
+             |> Player.add_equip Types.Unblockable
+             |> Player.remove_equip Types.Unblockable
+           in
+           assert_equal ~printer:string_of_bool false
+             (Player.has_equip Types.Unblockable p) );
+         ( "set_max_lives increases max lives" >:: fun _ ->
+           let p = Player.make_player 1 "Alice" |> Player.set_max_lives 3 in
+           assert_equal ~printer:string_of_int 10 p.Player.max_lives );
+         ( "set_max_lives decrease clamps lives" >:: fun _ ->
+           let p = Player.make_player 1 "Alice" |> Player.set_max_lives (-3) in
+           assert_equal ~printer:string_of_int 4 p.Player.max_lives;
+           assert_equal ~printer:string_of_int 4 p.Player.lives );
+         ( "force_add ignores hand limit" >:: fun _ ->
+           let p =
+             Player.make_player 1 "Alice"
+             |> Player.set_lives 1 |> Player.force_add atk |> Player.force_add blk
+           in
+           assert_equal ~printer:string_of_int 2 (List.length p.Player.hand) );
          (* ── Deck ── *)
          ( "full deck contains 54 cards" >:: fun _ ->
            assert_equal ~printer:string_of_int 54 (List.length Deck.full_deck)
@@ -213,6 +259,10 @@ let tests =
            let dealt, remaining = Deck.deal 60 Deck.full_deck in
            assert_equal ~printer:string_of_int 54 (List.length dealt);
            assert_equal ~printer:string_of_int 0 (List.length remaining) );
+         ( "deal 0 returns empty list" >:: fun _ ->
+           let dealt, remaining = Deck.deal 0 Deck.full_deck in
+           assert_equal ~printer:string_of_int 0 (List.length dealt);
+           assert_equal ~printer:string_of_int 54 (List.length remaining) );
          ( "shuffle preserves deck size" >:: fun _ ->
            let shuffled = Deck.shuffle Deck.full_deck in
            assert_equal ~printer:string_of_int 54 (List.length shuffled) );
@@ -238,6 +288,31 @@ let tests =
            match State.add_player p2 s_started with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
+         ( "add player rejected when game is over" >:: fun _ ->
+           let s =
+             {
+               (two_player_game ()) with
+               State.status =
+                 State.GameOver (Player.make_player 1 "Alice");
+             }
+           in
+           match State.add_player (Player.make_player 3 "Carol") s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "add player rejected when game is full" >:: fun _ ->
+           let s =
+             List.fold_left
+               (fun acc i ->
+                 match
+                   State.add_player (Player.make_player i (string_of_int i)) acc
+                 with
+                 | Ok s' -> s'
+                 | Error _ -> acc)
+               (State.make ()) [ 1; 2; 3; 4; 5 ]
+           in
+           match State.add_player (Player.make_player 6 "Eve") s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error (full)" );
          ( "start game deals 7 cards to each player" >:: fun _ ->
            let s = State.make () in
            let p = Player.make_player 1 "Alice" in
@@ -269,6 +344,10 @@ let tests =
            let s'' = add_or_fail p2 s' in
            let s_wrapped = State.next_turn s'' |> State.next_turn in
            assert_equal ~printer:string_of_int 0 s_wrapped.State.turn );
+         ( "next turn resets attacks_used" >:: fun _ ->
+           let s = { (two_player_game ()) with State.attacks_used = 1 } in
+           let s' = State.next_turn s in
+           assert_equal ~printer:string_of_int 0 s'.State.attacks_used );
          (* onto_discard *)
          ( "onto_discard adds card to discard pile" >:: fun _ ->
            let s = State.make () in
@@ -301,6 +380,104 @@ let tests =
            let s = two_player_game () in
            let s' = State.apply_card 99 atk s in
            assert_equal s s' );
+         (* remove_player *)
+         ( "remove_player removes specified player" >:: fun _ ->
+           let s = two_player_game () in
+           let s' = State.remove_player 2 s in
+           assert_equal ~printer:string_of_int 1 (List.length s'.State.players);
+           assert_equal None (State.find_player 2 s') );
+         ( "remove_player with unknown id is no-op" >:: fun _ ->
+           let s = two_player_game () in
+           let s' = State.remove_player 99 s in
+           assert_equal ~printer:string_of_int 2 (List.length s'.State.players)
+         );
+         (* current_player *)
+         ( "current_player at turn 0 is first player" >:: fun _ ->
+           let s = two_player_game () in
+           match State.current_player s with
+           | Some p -> assert_equal ~printer:string_of_int 1 p.Player.id
+           | None -> assert_failure "expected Some" );
+         ( "current_player at turn 1 is second player" >:: fun _ ->
+           let s = { (two_player_game ()) with State.turn = 1 } in
+           match State.current_player s with
+           | Some p -> assert_equal ~printer:string_of_int 2 p.Player.id
+           | None -> assert_failure "expected Some" );
+         (* check_game_over *)
+         ( "check_game_over no change with 2+ alive players" >:: fun _ ->
+           let s = State.check_game_over (two_player_game ()) in
+           assert_equal State.InProgress s.State.status );
+         ( "check_game_over draw when all dead" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_player_lives 1 0 |> set_player_lives 2 0
+             |> State.check_game_over
+           in
+           assert_equal State.Draw s.State.status );
+         (* reshuffle_if_empty *)
+         ( "reshuffle_if_empty reshuffles when deck empty" >:: fun _ ->
+           let s =
+             {
+               (two_player_game ()) with
+               State.deck = [];
+               State.discard = [ atk; blk ];
+             }
+           in
+           let s' = State.reshuffle_if_empty s in
+           assert_equal ~printer:string_of_int 2 (List.length s'.State.deck);
+           assert_equal ~printer:string_of_int 0 (List.length s'.State.discard)
+         );
+         ( "reshuffle_if_empty no-op when deck has cards" >:: fun _ ->
+           let s = two_player_game () in
+           let orig = List.length s.State.deck in
+           let s' = State.reshuffle_if_empty s in
+           assert_equal ~printer:string_of_int orig (List.length s'.State.deck)
+         );
+         (* draw_one *)
+         ( "draw_one draws top card from deck" >:: fun _ ->
+           let s = two_player_game () in
+           let p1 = get_player 1 s in
+           let before = List.length p1.Player.hand in
+           let p1', s' = State.draw_one p1 s in
+           assert_equal ~printer:string_of_int (before + 1)
+             (List.length p1'.Player.hand);
+           assert_equal ~printer:string_of_int
+             (List.length s.State.deck - 1)
+             (List.length s'.State.deck) );
+         ( "draw_one from empty deck and empty discard returns same player"
+         >:: fun _ ->
+           let s =
+             { (two_player_game ()) with State.deck = []; State.discard = [] }
+           in
+           let p1 = get_player 1 s in
+           let before = List.length p1.Player.hand in
+           let p1', s' = State.draw_one p1 s in
+           assert_equal ~printer:string_of_int before
+             (List.length p1'.Player.hand);
+           assert_equal ~printer:string_of_int 0 (List.length s'.State.deck) );
+         (* do_draw_phase *)
+         ( "do_draw_phase draws up to 2 cards per player" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [] |> set_hand 2 [] in
+           let s' = State.do_draw_phase s in
+           let p1 = get_player 1 s' in
+           let p2 = get_player 2 s' in
+           assert_equal ~printer:string_of_int 2 (List.length p1.Player.hand);
+           assert_equal ~printer:string_of_int 2 (List.length p2.Player.hand) );
+         ( "do_draw_phase draws 0 when hand is at lives limit" >:: fun _ ->
+           let s = two_player_game () in
+           let p1_before = get_player 1 s in
+           let s' = State.do_draw_phase s in
+           let p1_after = get_player 1 s' in
+           assert_equal
+             (List.length p1_before.Player.hand)
+             (List.length p1_after.Player.hand) );
+         ( "do_draw_phase skips dead players" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [] |> set_player_lives 1 0 |> set_hand 2 []
+           in
+           let s' = State.do_draw_phase s in
+           let p1 = get_player 1 s' in
+           assert_equal ~printer:string_of_int 0 (List.length p1.Player.hand) );
          (* ── Rules: special_type_of_card — clubs ── *)
          ( "2♣ is Chaos" >:: fun _ ->
            assert_equal (Some Types.Chaos) (Rules.special_type_of_card club2) );
@@ -465,11 +642,60 @@ let tests =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play king) (Some 2) s)
            in
            assert_equal [ king; atk ] s'.State.discard );
+         ( "HealOrDoubleAttack cannot target self" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ king; atk ] in
+           match Rules.resolve_action 1 (Turn.Play king) (Some 1) s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "HealOrDoubleAttack double attack sets pending with damage 2"
+         >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ king; atk ] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play king) (Some 2) s)
+           in
+           let s'' = State.resolve_sayno s' in
+           match s''.State.pending with
+           | Some p -> assert_equal ~printer:string_of_int 2 p.State.damage
+           | None -> assert_failure "expected pending" );
+         ( "HealOrDoubleAttack double attack: target passes takes 2 damage"
+         >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ king; atk ] |> set_player_lives 2 7
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play king) (Some 2) s)
+           in
+           let s'' = State.resolve_sayno s' in
+           let s''', _ =
+             ok_or_fail (Rules.resolve_action 2 Turn.Pass None s'')
+           in
+           let p2 = get_player 2 s''' in
+           assert_equal ~printer:string_of_int 5 p2.Player.lives );
+         ( "HealOrDoubleAttack double attack: target blocks clears pending"
+         >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ king; atk ] |> set_hand 2 [ blk ]
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play king) (Some 2) s)
+           in
+           let s'' = State.resolve_sayno s' in
+           let s''', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play blk) None s'')
+           in
+           assert_equal None s'''.State.pending );
          ( "Steal requires a target" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ queen ] |> set_hand 2 [ atk ]
            in
            match Rules.resolve_action 1 (Turn.Play queen) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "Steal cannot target self" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ queen ] in
+           match Rules.resolve_action 1 (Turn.Play queen) (Some 1) s with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
          ( "Steal opens Say No window" >:: fun _ ->
@@ -493,11 +719,38 @@ let tests =
            assert_equal ~printer:string_of_int 1 (List.length p1.Player.hand);
            assert_equal ~printer:string_of_int 0 (List.length p2.Player.hand);
            assert_equal [ atk ] p1.Player.hand );
+         ( "Steal from empty target does nothing to stealer" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ queen ] |> set_hand 2 [] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play queen) (Some 2) s)
+           in
+           let s'' = State.resolve_sayno s' in
+           let p1 = get_player 1 s'' in
+           assert_equal ~printer:string_of_int 0 (List.length p1.Player.hand) );
+         ( "Steal can steal an equip from target" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ queen ] |> set_hand 2 []
+             |> add_equip_player 2 Types.UnlimitedAttack
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play queen) (Some 2) s)
+           in
+           let s'' = State.resolve_sayno s' in
+           let p1 = get_player 1 s'' in
+           let p2 = get_player 2 s'' in
+           (* target loses the equip; actor gets the ace card in hand *)
+           assert_equal false (Player.has_equip Types.UnlimitedAttack p2);
+           assert_equal [ ace_s ] p1.Player.hand );
          ( "Break requires a target" >:: fun _ ->
            let s =
              two_player_game () |> set_hand 1 [ jack ] |> set_hand 2 [ atk ]
            in
            match Rules.resolve_action 1 (Turn.Play jack) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "Break cannot target self" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ jack ] in
+           match Rules.resolve_action 1 (Turn.Play jack) (Some 1) s with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
          ( "Break opens Say No window" >:: fun _ ->
@@ -522,6 +775,26 @@ let tests =
            assert_equal ~printer:string_of_int 0 (List.length p2.Player.hand);
            assert_equal ~printer:string_of_int 2 (List.length s''.State.discard);
            assert_equal atk (List.hd s''.State.discard) );
+         ( "Break from empty target does nothing extra" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ jack ] |> set_hand 2 [] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play jack) (Some 2) s)
+           in
+           let s'' = State.resolve_sayno s' in
+           let p2 = get_player 2 s'' in
+           assert_equal ~printer:string_of_int 0 (List.length p2.Player.hand);
+           assert_equal [ jack ] s''.State.discard );
+         ( "Break can break an equip from target" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ jack ] |> set_hand 2 []
+             |> add_equip_player 2 Types.Unblockable
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play jack) (Some 2) s)
+           in
+           let s'' = State.resolve_sayno s' in
+           let p2 = get_player 2 s'' in
+           assert_equal false (Player.has_equip Types.Unblockable p2) );
          ( "black joker is Special BlackJoker" >:: fun _ ->
            assert_equal (Types.Special Types.BlackJoker)
              (Rules.card_type_of_card black_joker) );
@@ -547,6 +820,48 @@ let tests =
            assert_equal Types.NoEffect (Rules.effect_of_card black_joker) );
          ( "red joker produces NoEffect" >:: fun _ ->
            assert_equal Types.NoEffect (Rules.effect_of_card red_joker) );
+         (* ── Rules: response-only cards error when played normally ── *)
+         ( "SayNo returns error when played as a normal card" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ diam2 ] in
+           match Rules.resolve_action 1 (Turn.Play diam2) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "Reversify returns error when played as a normal card" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ diam3 ] in
+           match Rules.resolve_action 1 (Turn.Play diam3) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "Reflector returns error when played as a normal card" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ diam9 ] in
+           match Rules.resolve_action 1 (Turn.Play diam9) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         (* ── Rules: unimplemented cards return error ── *)
+         ( "LifeLock (5♣) not yet playable returns error" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ club5 ] in
+           match Rules.resolve_action 1 (Turn.Play club5) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "Reduction (6♣) not yet playable returns error" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ club6 ] in
+           match Rules.resolve_action 1 (Turn.Play club6) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "Silencer (6♦) not yet playable returns error" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ diam6 ] in
+           match Rules.resolve_action 1 (Turn.Play diam6) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "DoubleAgent (7♦) not yet playable returns error" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ diam7 ] in
+           match Rules.resolve_action 1 (Turn.Play diam7) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "SummonLightning (8♦) not yet playable returns error" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ diam8 ] in
+           match Rules.resolve_action 1 (Turn.Play diam8) None s with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
          (* ── Rules: resolve_action — normal turn ── *)
          ( "play attack sets pending" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ atk ] in
@@ -673,12 +988,59 @@ let tests =
            assert_equal ~printer:string_of_int 6 p1.Player.lives;
            assert_equal ~printer:string_of_int 4 p2.Player.lives;
            assert_equal None s''.State.pending_sayno );
+         ( "playing wrong card during sayno window returns error" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ heal ] |> set_hand 2 [ atk ]
+             |> set_player_lives 1 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
+           in
+           match Rules.resolve_action 2 (Turn.Play atk) None s' with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "discard during sayno window returns error" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ heal ] |> set_hand 2 [ blk ]
+             |> set_player_lives 1 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
+           in
+           match Rules.resolve_action 2 (Turn.Discard blk) None s' with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         ( "non-waiting player cannot act during sayno window" >:: fun _ ->
+           let s =
+             three_player_game ()
+             |> set_hand 1 [ heal ] |> set_player_lives 1 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play heal) None s)
+           in
+           match Rules.resolve_action 1 Turn.Pass None s' with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
          ( "play diplomacy opens Say No window" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ diam4 ] in
            let s', _ =
              ok_or_fail (Rules.resolve_action 1 (Turn.Play diam4) None s)
            in
            assert_equal true (s'.State.pending_sayno <> None) );
+         ( "SayNo cancels Diplomacy" >:: fun _ ->
+           let s =
+             two_player_game () |> set_hand 1 [ diam4 ] |> set_hand 2 [ diam2 ]
+             |> set_player_lives 1 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play diam4) None s)
+           in
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play diam2) None s')
+           in
+           let p1 = get_player 1 s'' in
+           assert_equal ~printer:string_of_int 5 p1.Player.lives;
+           assert_equal None s''.State.pending_sayno );
          ( "diplomacy can be joined with any card" >:: fun _ ->
            let s =
              three_player_game () |> set_hand 1 [ diam4 ] |> set_hand 2 [ atk ]
@@ -791,38 +1153,6 @@ let tests =
            assert_equal s.State.players s'.State.players;
            assert_equal s.State.discard s'.State.discard );
          (* ── Rules: resolve_action — pending attack ── *)
-         ( "black joker reduces all alive players by 1" >:: fun _ ->
-           let s =
-             three_player_game () |> set_hand 1 [ black_joker ]
-             |> set_player_lives 1 5 |> set_player_lives 2 5
-             |> set_player_lives 3 5
-           in
-           let s', _ =
-             ok_or_fail (Rules.resolve_action 1 (Turn.Play black_joker) None s)
-           in
-           let p1 = get_player 1 s' in
-           let p2 = get_player 2 s' in
-           let p3 = get_player 3 s' in
-           assert_equal ~printer:string_of_int 4 p1.Player.lives;
-           assert_equal ~printer:string_of_int 4 p2.Player.lives;
-           assert_equal ~printer:string_of_int 4 p3.Player.lives;
-           assert_equal black_joker (List.hd s'.State.discard) );
-         ( "red joker increases all alive players by 1" >:: fun _ ->
-           let s =
-             three_player_game () |> set_hand 1 [ red_joker ]
-             |> set_player_lives 1 5 |> set_player_lives 2 5
-             |> set_player_lives 3 5
-           in
-           let s', _ =
-             ok_or_fail (Rules.resolve_action 1 (Turn.Play red_joker) None s)
-           in
-           let p1 = get_player 1 s' in
-           let p2 = get_player 2 s' in
-           let p3 = get_player 3 s' in
-           assert_equal ~printer:string_of_int 6 p1.Player.lives;
-           assert_equal ~printer:string_of_int 6 p2.Player.lives;
-           assert_equal ~printer:string_of_int 6 p3.Player.lives;
-           assert_equal red_joker (List.hd s'.State.discard) );
          ( "non-target cannot act while attack is pending" >:: fun _ ->
            let s = two_player_game () |> with_pending 1 2 1 in
            match Rules.resolve_action 1 Turn.Pass None s with
@@ -885,6 +1215,170 @@ let tests =
            match Rules.resolve_action 2 (Turn.Play heal) None s with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
+         (* ── Rules: Unblockable prevents blocking ── *)
+         ( "Unblockable: target cannot play block card" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ atk ] |> set_hand 2 [ blk ]
+             |> add_equip_player 1 Types.Unblockable
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play atk) (Some 2) s)
+           in
+           match Rules.resolve_action 2 (Turn.Play blk) None s' with
+           | Error _ -> ()
+           | Ok _ -> assert_failure "expected Error" );
+         (* ── Rules: UnlimitedAttack allows second attack ── *)
+         ( "UnlimitedAttack allows second attack in same round" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ atk; atk ]
+             |> add_equip_player 1 Types.UnlimitedAttack
+           in
+           let s = { s with State.attacks_used = 1 } in
+           match Rules.resolve_action 1 (Turn.Play atk) (Some 2) s with
+           | Ok _ -> ()
+           | Error _ -> assert_failure "expected Ok" );
+         (* ── Rules: BlockHealReverse ── *)
+         ( "BlockHealReverse: block card opens heal sayno window" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ blk ] |> set_player_lives 1 5
+             |> add_equip_player 1 Types.BlockHealReverse
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play blk) None s)
+           in
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "BlockHealReverse: block card heals after pass" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ blk ] |> set_player_lives 1 5
+             |> add_equip_player 1 Types.BlockHealReverse
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play blk) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p1 = get_player 1 s'' in
+           assert_equal ~printer:string_of_int 6 p1.Player.lives );
+         ( "BlockHealReverse: heal card can counter ByBlock attack" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 2 [ heal ] |> with_pending 1 2 1
+             |> add_equip_player 2 Types.BlockHealReverse
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play heal) None s)
+           in
+           assert_equal None s'.State.pending );
+         (* ── Rules: Equipment — equip via SayNo window ── *)
+         ( "equip ace opens Say No window" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ ace_s ] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play ace_s) None s)
+           in
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "equip ace granted after all pass" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ ace_s ] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play ace_s) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p1 = get_player 1 s'' in
+           assert_equal true (Player.has_equip Types.UnlimitedAttack p1) );
+         ( "SayNo cancels equip" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ ace_s ] |> set_hand 2 [ diam2 ]
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play ace_s) None s)
+           in
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play diam2) None s')
+           in
+           let p1 = get_player 1 s'' in
+           assert_equal false (Player.has_equip Types.UnlimitedAttack p1) );
+         ( "Reversify during equip gives the card to the responder" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ ace_s ] |> set_hand 2 [ diam3 ]
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play ace_s) None s)
+           in
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play diam3) None s')
+           in
+           let p1 = get_player 1 s'' in
+           let p2 = get_player 2 s'' in
+           assert_equal false (Player.has_equip Types.UnlimitedAttack p1);
+           assert_equal [ ace_s ] p2.Player.hand );
+         ( "Reflector during equip resolves equip and costs responder 1 life"
+         >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ ace_s ] |> set_hand 2 [ diam9 ]
+             |> set_player_lives 2 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play ace_s) None s)
+           in
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play diam9) None s')
+           in
+           let p1 = get_player 1 s'' in
+           let p2 = get_player 2 s'' in
+           assert_equal true (Player.has_equip Types.UnlimitedAttack p1);
+           assert_equal ~printer:string_of_int 4 p2.Player.lives );
+         (* ── Rules: Sacrifice ── *)
+         ( "Sacrifice opens Say No window" >:: fun _ ->
+           let s = two_player_game () |> set_hand 1 [ diam10 ] in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play diam10) None s)
+           in
+           assert_equal true (s'.State.pending_sayno <> None) );
+         ( "Sacrifice loses 3 lives and gains max lives after pass" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ diam10 ] |> set_player_lives 1 7
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play diam10) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p1 = get_player 1 s'' in
+           assert_equal ~printer:string_of_int 4 p1.Player.lives;
+           assert_equal ~printer:string_of_int 8 p1.Player.max_lives );
+         ( "Sacrifice can kill the actor triggering game over" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ diam10 ] |> set_player_lives 1 3
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play diam10) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           match s''.State.status with
+           | State.GameOver w ->
+               assert_equal ~printer:string_of_int 2 w.Player.id
+           | _ -> assert_failure "expected GameOver" );
+         ( "SayNo cancels Sacrifice" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ diam10 ] |> set_hand 2 [ diam2 ]
+             |> set_player_lives 1 7
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play diam10) None s)
+           in
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play diam2) None s')
+           in
+           let p1 = get_player 1 s'' in
+           assert_equal ~printer:string_of_int 7 p1.Player.lives;
+           assert_equal ~printer:string_of_int 7 p1.Player.max_lives );
          (* ── Rules: ArrowStorm (3♣) ── *)
          ( "ArrowStorm effect_of_card returns Attack 1" >:: fun _ ->
            assert_equal (Types.Attack 1) (Rules.effect_of_card club3) );
@@ -911,6 +1405,30 @@ let tests =
            match Rules.resolve_action 1 (Turn.Play club3) (Some 2) s with
            | Error _ -> ()
            | Ok _ -> assert_failure "expected Error" );
+         ( "ArrowStorm in 2-player: target passes and takes damage" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ club3 ] |> set_player_lives 2 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club3) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p2 = get_player 2 s'' in
+           assert_equal ~printer:string_of_int 4 p2.Player.lives;
+           assert_equal None s''.State.pending );
+         ( "ArrowStorm in 2-player: target blocks clears pending" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ club3 ] |> set_hand 2 [ blk ]
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club3) None s)
+           in
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play blk) None s')
+           in
+           assert_equal None s''.State.pending );
          ( "ArrowStorm target can block and the next target is queued"
          >:: fun _ ->
            let s =
@@ -982,6 +1500,29 @@ let tests =
            let s', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s) in
            let p2 = get_player 2 s' in
            assert_equal ~printer:string_of_int 4 p2.Player.lives );
+         ( "Chaos in 3-player: all targets pass, all take damage" >:: fun _ ->
+           let s =
+             three_player_game ()
+             |> set_hand 1 [ club2 ]
+             |> set_player_lives 1 7 |> set_player_lives 2 7
+             |> set_player_lives 3 7
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club2) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let p2 = get_player 2 s'' in
+           assert_equal ~printer:string_of_int 6 p2.Player.lives;
+           let s''', _ =
+             ok_or_fail (Rules.resolve_action 3 Turn.Pass None s'')
+           in
+           let p3 = get_player 3 s''' in
+           assert_equal ~printer:string_of_int 6 p3.Player.lives;
+           let s'''', _ =
+             ok_or_fail (Rules.resolve_action 1 Turn.Pass None s''')
+           in
+           let p1 = get_player 1 s'''' in
+           assert_equal ~printer:string_of_int 6 p1.Player.lives );
          (* ── Rules: TwoToMax (9♣/10♣) ── *)
          ( "TwoToMax 9♣ with 10♣ opens Say No window" >:: fun _ ->
            let s = two_player_game () |> set_hand 1 [ club9; club10 ] in
@@ -1044,6 +1585,20 @@ let tests =
            assert_equal 0 (List.length p1.Player.hand);
            assert_equal true (List.mem club9 s''.State.discard);
            assert_equal true (List.mem club10 s''.State.discard) );
+         ( "SayNo cancels TwoToMax and max lives unchanged" >:: fun _ ->
+           let s =
+             two_player_game ()
+             |> set_hand 1 [ club9; club10 ] |> set_hand 2 [ diam2 ]
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club9) None s)
+           in
+           let s'', _ =
+             ok_or_fail (Rules.resolve_action 2 (Turn.Play diam2) None s')
+           in
+           let p1 = get_player 1 s'' in
+           assert_equal [ club10 ] p1.Player.hand;
+           assert_equal ~printer:string_of_int 7 p1.Player.max_lives );
          (* ── Rules: DeadMansGamble (7♣/8♣) ── *)
          ( "DMG 7♣ no partner holder opens Say No window" >:: fun _ ->
            let s =
@@ -1257,6 +1812,22 @@ let tests =
            in
            let p1 = get_player 1 s''''' in
            assert_equal ~printer:string_of_int 4 p1.Player.lives );
+         (* ── DMG in 3-player no partner holder ── *)
+         ( "DMG no partner in 3-player: all pass actor gains life" >:: fun _ ->
+           let s =
+             three_player_game ()
+             |> set_hand 1 [ club7 ] |> set_hand 2 [] |> set_hand 3 []
+             |> set_player_lives 1 5
+           in
+           let s', _ =
+             ok_or_fail (Rules.resolve_action 1 (Turn.Play club7) None s)
+           in
+           let s'', _ = ok_or_fail (Rules.resolve_action 2 Turn.Pass None s') in
+           let s''', _ =
+             ok_or_fail (Rules.resolve_action 3 Turn.Pass None s'')
+           in
+           let p1 = get_player 1 s''' in
+           assert_equal ~printer:string_of_int 6 p1.Player.lives );
        ]
 
 let _ = run_test_tt_main tests
