@@ -13,3 +13,4 @@ Team Members:
 GENAI USAGE:
 
 - Isabella: used copilot to brainstorm debugging in structural errors. (ex. fixing the segment that consults all players when an interception is valid before moving onto the next turn)
+- Olric: used claude code to help implement the equipment cards, which are the most complex part of the game. I had to explain the intended behavior of each card and how they interact with each other, and claude was able to generate code that correctly implemented these mechanics. I also used claude to help write unit tests for the new equipment card logic. Additionally, Claude helped me write out RULES.md, however, all rules and interactions were designed by the team, and I just used claude to write them out in a clear and organized way.
