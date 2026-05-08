@@ -9,3 +9,7 @@ Team Members:
 - Tran Tran (tnt54)
 - Ethan Nan (emn64)
 - Talus Leong (tl952)
+
+GENAI USAGE:
+
+- Isabella: used copilot to brainstorm debugging in structural errors. (ex. fixing the segment that consults all players when an interception is valid before moving onto the next turn)
