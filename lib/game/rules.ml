@@ -1,5 +1,12 @@
 open Types
 
+let card_of_equip (eq : equipment_type) : card =
+  match eq with
+  | UnlimitedAttack -> { rank = Ace; suit = Spades; color = Black }
+  | BlockHealReverse -> { rank = Ace; suit = Hearts; color = Red }
+  | Unblockable -> { rank = Ace; suit = Clubs; color = Black }
+  | Random50 -> { rank = Ace; suit = Diamonds; color = Red }
+
 (* Determine the special_type based on card rank/suit *)
 let special_type_of_card (c : card) : special_type option =
   match (c.rank, c.suit) with
@@ -85,6 +92,51 @@ let apply_aoe_life_except (actor_id : int) (delta : int) (s : State.t) : State.t
         | None -> st
         | Some player ->
             State.update_player (Player.modify_lives delta player) st
+      else st)
+    s s.State.players
+
+let apply_reduction (s : State.t) : State.t =
+  List.fold_left
+    (fun st p ->
+      if Player.is_alive p then
+        match State.find_player p.Player.id st with
+        | None -> st
+        | Some player ->
+            (* Filter hand to keep only basic cards *)
+            let basic_cards =
+              List.filter
+                (fun card ->
+                  match card_type_of_card card with
+                  | BasicAttack | BasicBlock | BasicHeal -> true
+                  | _ -> false)
+                player.Player.hand
+            in
+            let discard_cards =
+              List.filter
+                (fun card ->
+                  match card_type_of_card card with
+                  | BasicAttack | BasicBlock | BasicHeal -> false
+                  | _ -> true)
+                player.Player.hand
+            in
+            (* Discard the non-basic cards *)
+            let st' =
+              List.fold_left
+                (fun s c -> State.onto_discard c s)
+                st discard_cards
+            in
+            (* Discard equipped cards and remove equips *)
+            let st'' =
+              List.fold_left
+                (fun s eq ->
+                  let card = card_of_equip eq in
+                  State.onto_discard card s)
+                st' player.Player.equips
+            in
+            let player' =
+              { player with Player.hand = basic_cards; equips = [] }
+            in
+            State.update_player player' st''
       else st)
     s s.State.players
 
@@ -278,6 +330,16 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                    "Player %d played TwoToMax. Waiting for possible \
                     interception."
                    actor_id)
+        | Special Reduction ->
+            if target_id <> None then Error "Reduction does not take a target."
+            else
+              let s' = State.apply_card actor_id c s in
+              let s'' = apply_reduction s' in
+              Ok
+                ( s'',
+                  Printf.sprintf
+                    "Player %d played Reduction: all nonbasic cards discarded!"
+                    actor_id )
         | Special HealOrDoubleAttack -> (
             match target_id with
             | None ->
