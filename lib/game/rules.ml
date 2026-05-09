@@ -1,5 +1,5 @@
 open Types
-
+(*converts equips back to cards for discard pile*)
 let card_of_equip (eq : equipment_type) : card =
   match eq with
   | UnlimitedAttack -> { rank = Ace; suit = Spades; color = Black }
