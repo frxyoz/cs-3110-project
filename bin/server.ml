@@ -243,6 +243,7 @@ let rec action_phase_loop passes_in_a_row =
                   | Ok (new_state, event_msg) ->
                       game_state := new_state;
                       let* () = broadcast_to_all event_msg in
+                      let* () = broadcast_status () in
                       (* Only advance the turn when no response window is
                          pending. An attack sets pending; the response clears
                          it. DMG and Say No set pending_dmg/pending_sayno; they
