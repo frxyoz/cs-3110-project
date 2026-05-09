@@ -577,9 +577,12 @@ let resolve_action (actor_id : int) (action : Turn.t) (target_id : int option)
                   in
                   let counters =
                     can_counter eff p.State.block_with
-                    || (defender_bhr
+                    || defender_bhr
                        && p.State.block_with = State.ByBlock
-                       && (match eff with Heal _ -> true | _ -> false))
+                       &&
+                       match eff with
+                       | Heal _ -> true
+                       | _ -> false
                   in
                   if counters then
                     let s' =
