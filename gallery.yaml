@@ -23,7 +23,7 @@ title: "Super Complicated Card Game"
 # OK if this is a Cornell Github link, but public gallery viewers won't be able to see it.
 git-repo: "https://github.com/frxyoz/super-complicated-card-game"
 # Replace the URL with your own demo video.
-demo-video-url: "https://youtu.be/s_ao5zsr6Ag"
+demo-video-url: "https://youtu.be/LnRbs9LsZUI?si=s84efFprRqUo2Kp5"
 # Write a short, attention-grabbing description of your project.
 desc: >
   Our project is a multiplayer card game engine built around a custom deck. Players compete to be the last one standing, each starting with 7 lives and 7 cards, where your life count dynamically caps how many cards you can hold. Each player begins with 7 lives and 7 cards in hand, where your current life count dynamically caps the maximum number of cards you may hold at any time. If you lose lives, your hand limit shrinks accordingly. Each round flows through three structured phases: a draw phase (where players replenish their hands), a judgment phase (where card flips determine outcomes such as life gain or loss for all participants), and a free-form action phase (where players spend cards to attack, block, heal, or trigger special effects). Cards span a range of types, from basics like Attack and Block, to powerful equippables like Unlimited Attack and 50/50, to the rare and game-altering Judgment cards with unique phase-specific effects. The game supports terminal play as well as GUI play.
