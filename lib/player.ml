@@ -11,7 +11,7 @@ type t = {
 }
 
 let make_player (id : int) (name : string) : t =
-  { id; name; lives = 1; max_lives = 1; hand = []; equips = [] }
+  { id; name; lives = 7; max_lives = 7; hand = []; equips = [] }
 
 let has_equip (eq : equipment_type) (p : t) : bool = List.mem eq p.equips
 
@@ -43,8 +43,8 @@ let modify_lives (amt : int) (p : t) : t = set_lives (p.lives + amt) p
 let add_to_hand (card : card) (p : t) : t =
   if List.length p.hand >= p.lives then p else { p with hand = card :: p.hand }
 
-(* [force_add card p] adds [card] to [p]'s hand unconditionally.
-   Used by the draw phase, which already computes the correct draw count. *)
+(* [force_add card p] adds [card] to [p]'s hand unconditionally. Used by the
+   draw phase, which already computes the correct draw count. *)
 let force_add (card : card) (p : t) : t = { p with hand = card :: p.hand }
 
 let remove_from_hand (card : card) (p : t) : t =
