@@ -45,6 +45,17 @@ let deal (n : int) (deck : card list) : card list * card list =
   in
   take [] n deck
 
+let decks_for_players (n : int) : card list =
+  let num_decks =
+    let rec pow2 k = if k = 0 then 1 else 2 * pow2 (k - 1) in
+    pow2 ((n - 1) / 3)
+  in
+  let rec repeat acc = function
+    | 0 -> acc
+    | k -> repeat (full_deck @ acc) (k - 1)
+  in
+  repeat [] num_decks
+
 let shuffle (deck : card list) : card list =
   let arr = Array.of_list deck in
   let n = Array.length arr in

@@ -47,13 +47,11 @@
 
 ### What is NOT yet implemented (pick up from here)
 
-- IMPLEMENT ACES NEXT! - other things are dependent on this. scroll down for more in depth description of ace functions
 - or IMPLEMENT JUDGEMENT!
 - have the first person who joins start the game
-- more cohesive testing w bisect
 - documentation for each function
 - `resolve_action` for remaining **diamonds specials**: Silencer (6♦), DoubleAgent (7♦), SummonLightning (8♦). These all require judgement
-- `resolve_action` for **clubs 4–6**: LifeLock (5♣), Reduction (6♣)(aces should be implemented before reduction)
+- `resolve_action` for **clubs 4–6**: LifeLock (5♣),
 - **Equipment resolve**: equipping Aces, UnlimitedAttack bypassing `attacks_used`, BlockHealReverse swapping block↔heal, Unblockable preventing instant response, Random50 50/50 flip
 - **Judgment phase** logic: flip top card, red/black determines if card goes through
 - **Draw phase** tests (`do_draw_phase` exists but is untested)
@@ -61,6 +59,3 @@
 - **Turn rotation** and round-start logic (who goes first, rotating each round)
 - **Life Lock** interaction: tracking linked players, breaking when they attack each other
 - **Server / game loop** wiring: nothing connects `resolve_action` to actual player I/O yet
-
-ace functions:
-implement equipment cards. when an equipment card is played it can be intercepted. otherwise once the card is equipped, the player has the ability of the card gives until the card gets removed. This means the effect of the card may last for multiple rounds. the card may get removed if someone steals or breaks it. There are 4 equip types. when UnimitedAttack is equipped, the player does not have the 1 attack per round limit. The player may choose to attack multiple times in a round without getting an error. when BlockHealReverse is played the player may use blocks as heals and heals as blocks interchangeably. When 50/50 is equipped, if the player with the card equipped gets attack they may choose to block as normal or pass, however if they pass there is only a 50% chance that the attack goes through and there is a 50% chance that the equip blocks the attack. when unblockable is played, if the equipped player attacks someone, the target does not have the option to block the attack will always go through unless the player has 50/50 equipped then there is a 50% chance the attack goes through.
