@@ -39,6 +39,8 @@ type game_view = {
   mutable lobby_connected : int;
   mutable lobby_total : int;
   mutable lobby_ready : int;
+  mutable attack_incoming : bool;
+  mutable attack_popup_triggered : bool;
 }
 
 let view : game_view =
@@ -53,6 +55,8 @@ let view : game_view =
     lobby_connected = 0;
     lobby_total = 0;
     lobby_ready = 0;
+    attack_incoming = false;
+    attack_popup_triggered = false;
   }
 
 (* ── Card parsing ── *)
@@ -268,10 +272,16 @@ let update_view_from_line line =
       done;
       !found
   in
+  if contains_substr "must block or pass" line then
+    view.attack_incoming <- true;
   if contains_substr "> " line then begin
     view.prompt <- line;
     view.waiting_for_input <- true;
-    view.pending_attack <- None
+    view.pending_attack <- None;
+    if view.attack_incoming then begin
+      view.attack_popup_triggered <- true;
+      view.attack_incoming <- false
+    end
   end;
   (* "NAME joined! (N/M players)" *)
   (if contains_substr "joined!" line then
@@ -307,7 +317,7 @@ let card_h = 110
 let card_spacing = 10
 let hand_y = screen_h - card_h - 40
 let log_x = 20
-let log_y = 20
+let log_y = 72
 let log_line_h = 18
 let max_log_vis = 20
 
@@ -323,12 +333,130 @@ let draw_log () =
       draw_text line log_x y 14 (Color.create 200 200 180 255))
     visible
 
-(* Draw status bar at top right *)
-let draw_status () =
+(* Textures loaded after init_window in run_client_gui *)
+let heart_tex : Texture2D.t option ref = ref None
+let emptyheart_tex : Texture2D.t option ref = ref None
+
+(* Unix timestamp when the attack popup should expire (0.0 = not active) *)
+let attack_popup_until : float ref = ref 0.0
+
+(* Parse "Alice: 3/7" or "Alice: 3/7 †" into (name, cur, max) *)
+let parse_health_entry entry =
+  let entry = String.trim entry in
+  match String.index_opt entry ':' with
+  | None -> None
+  | Some ci ->
+      let name = String.trim (String.sub entry 0 ci) in
+      let rest =
+        String.trim (String.sub entry (ci + 1) (String.length entry - ci - 1))
+      in
+      let lives_part =
+        match String.index_opt rest ' ' with
+        | Some si -> String.sub rest 0 si
+        | None -> rest
+      in
+      (match String.index_opt lives_part '/' with
+      | None -> None
+      | Some fi ->
+          let cur_s = String.sub lives_part 0 fi in
+          let max_s =
+            String.sub lives_part (fi + 1) (String.length lives_part - fi - 1)
+          in
+          (match
+             ( int_of_string_opt (String.trim cur_s),
+               int_of_string_opt (String.trim max_s) )
+           with
+          | Some cur, Some mx when name <> "" -> Some (name, cur, mx)
+          | _ -> None))
+
+(* Draw health bar across the top using heart images *)
+let draw_health () =
   Mutex.lock view_mutex;
   let s = view.status_bar in
   Mutex.unlock view_mutex;
-  draw_text s ((screen_w / 2) - 200) 20 16 (Color.create 180 220 180 255)
+  (* Dark panel background *)
+  draw_rectangle 0 0 screen_w 64 (Color.create 0 0 0 180);
+  draw_rectangle_lines 0 63 screen_w 1 (Color.create 80 100 80 255);
+  if s = "" then ()
+  else begin
+    let entries = String.split_on_char '|' s in
+    let health_list = List.filter_map parse_health_entry entries in
+    let n = List.length health_list in
+    if n = 0 then ()
+    else begin
+      let heart_h = 36 in
+      let heart_gap = 4 in
+      (* Determine max hearts any player has for block width calculation *)
+      let max_hearts = List.fold_left (fun acc (_, _, mx) -> max acc mx) 0 health_list in
+      let name_w = 110 in
+      let hearts_w = max_hearts * (heart_h + heart_gap) in
+      let block_w = name_w + hearts_w + 20 in
+      let divider_w = 2 in
+      let total_w = n * block_w + (n - 1) * divider_w in
+      let start_x = (screen_w - total_w) / 2 in
+      List.iteri
+        (fun i (name, cur, mx) ->
+          let bx = start_x + i * (block_w + divider_w) in
+          let by = (64 - heart_h) / 2 in
+          draw_text name bx (by + 8) 18 Color.white;
+          for j = 0 to mx - 1 do
+            let hx = bx + name_w + (j * (heart_h + heart_gap)) in
+            let filled = j < cur in
+            (match (if filled then !heart_tex else !emptyheart_tex) with
+            | None ->
+                draw_circle (hx + (heart_h / 2)) (by + (heart_h / 2))
+                  (float_of_int (heart_h / 2))
+                  (if filled then Color.create 220 50 50 255
+                   else Color.create 60 60 60 255)
+            | Some tex ->
+                let tw = float_of_int (Texture2D.width tex) in
+                let th = float_of_int (Texture2D.height tex) in
+                let scale = float_of_int heart_h /. (max tw th) in
+                draw_texture_ex tex
+                  (Vector2.create (float_of_int hx) (float_of_int by))
+                  0.0 scale Color.white)
+          done;
+          if i < n - 1 then
+            draw_rectangle (bx + block_w) 4 divider_w 56
+              (Color.create 80 100 80 200))
+        health_list
+    end
+  end
+
+(* Flashing red popup when the local player is under attack *)
+let draw_attack_popup () =
+  let now = get_time () in
+  Mutex.lock view_mutex;
+  let triggered = view.attack_popup_triggered in
+  if triggered then begin
+    attack_popup_until := now +. 4.0;
+    view.attack_popup_triggered <- false
+  end;
+  Mutex.unlock view_mutex;
+  if now < !attack_popup_until then begin
+    let remaining = !attack_popup_until -. now in
+    let alpha =
+      if remaining < 1.0 then int_of_float (remaining *. 255.0) else 255
+    in
+    let pw = 460 in
+    let ph = 100 in
+    let px = (screen_w - pw) / 2 in
+    let py = (screen_h / 2) - 160 in
+    draw_rectangle px py pw ph (Color.create 180 20 20 alpha);
+    draw_rectangle_lines px py pw ph (Color.create 255 80 80 alpha);
+    draw_rectangle_lines (px + 2) (py + 2) (pw - 4) (ph - 4)
+      (Color.create 255 160 160 (alpha / 2));
+    let title = "INCOMING ATTACK!" in
+    draw_text title
+      (px + (pw / 2) - (measure_text title 28 / 2))
+      (py + 12) 28
+      (Color.create 255 255 255 alpha);
+    let sub = "Block a card to defend, or Pass to take damage" in
+    draw_text sub
+      (px + (pw / 2) - (measure_text sub 15 / 2))
+      (py + 56) 15
+      (Color.create 255 220 100 alpha)
+  end
 
 let card_raylib_color (c : Types.card) =
   match c.Types.color with
@@ -700,6 +828,8 @@ let run_client_gui () =
   let logo_tex = load_texture "assets/occg.png" in
   let tex_w = float_of_int (Texture2D.width logo_tex) in
   let tex_h = float_of_int (Texture2D.height logo_tex) in
+  heart_tex := Some (load_texture "assets/heart.png");
+  emptyheart_tex := Some (load_texture "assets/emptyheart.png");
 
   (* Name entry state — typed before the network thread starts *)
   let name_buf = Buffer.create 32 in
@@ -933,11 +1063,12 @@ let run_client_gui () =
           Mutex.unlock q_mutex
         end
     | InGame ->
+        draw_health ();
         draw_log ();
-        draw_status ();
         draw_hand ();
         draw_action_buttons ();
         draw_prompt ();
+        draw_attack_popup ();
         draw_target_selection ());
 
     end_drawing ()

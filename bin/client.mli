@@ -20,6 +20,8 @@ type game_view = {
   mutable lobby_connected : int;
   mutable lobby_total : int;
   mutable lobby_ready : int;
+  mutable attack_incoming : bool;
+  mutable attack_popup_triggered : bool;
 }
 
 val view : game_view
@@ -40,8 +42,13 @@ val log_x : int
 val log_y : int
 val log_line_h : int
 val max_log_vis : int
+val heart_tex : Raylib.Texture2D.t option ref
+val emptyheart_tex : Raylib.Texture2D.t option ref
+val attack_popup_until : float ref
+val parse_health_entry : string -> (string * int * int) option
 val draw_log : unit -> unit
-val draw_status : unit -> unit
+val draw_health : unit -> unit
+val draw_attack_popup : unit -> unit
 val card_raylib_color : Cs_3110_project.Types.card -> Raylib.Color.t
 val card_description : Cs_3110_project.Types.card -> string list
 val draw_tooltip : string list -> int -> int -> unit
