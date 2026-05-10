@@ -11,7 +11,7 @@ type t = {
 }
 
 let make_player (id : int) (name : string) : t =
-  { id; name; lives = 7; max_lives = 7; hand = []; equips = [] }
+  { id; name; lives = 1; max_lives = 1; hand = []; equips = [] }
 
 let has_equip (eq : equipment_type) (p : t) : bool = List.mem eq p.equips
 

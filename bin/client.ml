@@ -23,6 +23,7 @@ type screen =
   | NameEntry (* typing your name before connecting *)
   | Lobby (* connected, waiting for ready votes *)
   | InGame (* game is running *)
+  | GameOver of string (* game ended; string is the result message *)
 
 let current_screen : screen ref = ref NameEntry
 
@@ -36,6 +37,9 @@ type game_view = {
   mutable prompt : string;
   mutable waiting_for_input : bool;
   mutable pending_attack : int option;
+  mutable pending_choice : int option; (* card index awaiting play/discard choice *)
+  mutable pending_choice_ready : bool; (* false on the frame choice opens, suppresses popup clicks *)
+  mutable in_discard_phase : bool; (* true while the server is collecting forced discards *)
   mutable lobby_connected : int;
   mutable lobby_total : int;
   mutable lobby_ready : int;
@@ -52,6 +56,9 @@ let view : game_view =
     prompt = "";
     waiting_for_input = false;
     pending_attack = None;
+    pending_choice = None;
+    pending_choice_ready = false;
+    in_discard_phase = false;
     lobby_connected = 0;
     lobby_total = 0;
     lobby_ready = 0;
@@ -126,6 +133,8 @@ let string_of_card (c : Types.card) =
     rank_str ^ suit_str
 
 let view_mutex = Mutex.create ()
+
+let remove_nth i lst = List.filteri (fun j _ -> j <> i) lst
 
 (* ── Network thread ── *)
 
@@ -248,6 +257,9 @@ let update_view_from_line line =
     current_screen := Lobby;
   (* Game is starting *)
   if line = "All players ready! Game starting..." then current_screen := InGame;
+  (* Game ended *)
+  if String.length line >= 9 && String.sub line 0 9 = "Game over" then
+    current_screen := GameOver line;
   (* Detect action-phase prompts — the prompt block contains "> " *)
   if String.length line > 7 && String.sub line 0 7 = "Others:" then begin
     let rest = String.trim (String.sub line 7 (String.length line - 7)) in
@@ -274,6 +286,12 @@ let update_view_from_line line =
   in
   if contains_substr "must block or pass" line then
     view.attack_incoming <- true;
+  (* Entering discard phase — set flag so card clicks auto-discard *)
+  if String.length line >= 13 && String.sub line 0 13 = "Discard phase" then
+    view.in_discard_phase <- true;
+  (* New round starts — clear discard phase flag *)
+  if line = "─── Draw Phase ───" || line = "─── Action Phase ───" then
+    view.in_discard_phase <- false;
   if contains_substr "> " line then begin
     view.prompt <- line;
     view.waiting_for_input <- true;
@@ -317,7 +335,7 @@ let card_h = 110
 let card_spacing = 10
 let hand_y = screen_h - card_h - 40
 let log_x = 20
-let log_y = 72
+let log_y = 96
 let log_line_h = 18
 let max_log_vis = 20
 
@@ -340,7 +358,7 @@ let emptyheart_tex : Texture2D.t option ref = ref None
 (* Unix timestamp when the attack popup should expire (0.0 = not active) *)
 let attack_popup_until : float ref = ref 0.0
 
-(* Parse "Alice: 3/7" or "Alice: 3/7 †" into (name, cur, max) *)
+(* Parse "Alice: 3/7" or "Alice: 3/7 {UA,BHR}" into (name, cur, max, equips) *)
 let parse_health_entry entry =
   let entry = String.trim entry in
   match String.index_opt entry ':' with
@@ -366,7 +384,22 @@ let parse_health_entry entry =
              ( int_of_string_opt (String.trim cur_s),
                int_of_string_opt (String.trim max_s) )
            with
-          | Some cur, Some mx when name <> "" -> Some (name, cur, mx)
+          | Some cur, Some mx when name <> "" ->
+              let equips =
+                match String.index_opt rest '{' with
+                | None -> []
+                | Some bi ->
+                    let rest2 =
+                      String.sub rest (bi + 1) (String.length rest - bi - 1)
+                    in
+                    (match String.index_opt rest2 '}' with
+                    | None -> []
+                    | Some ei ->
+                        String.sub rest2 0 ei
+                        |> String.split_on_char ','
+                        |> List.filter (fun s -> s <> ""))
+              in
+              Some (name, cur, mx, equips)
           | _ -> None))
 
 (* Draw health bar across the top using heart images *)
@@ -374,9 +407,9 @@ let draw_health () =
   Mutex.lock view_mutex;
   let s = view.status_bar in
   Mutex.unlock view_mutex;
-  (* Dark panel background *)
-  draw_rectangle 0 0 screen_w 64 (Color.create 0 0 0 180);
-  draw_rectangle_lines 0 63 screen_w 1 (Color.create 80 100 80 255);
+  let header_h = 90 in
+  draw_rectangle 0 0 screen_w header_h (Color.create 0 0 0 180);
+  draw_rectangle_lines 0 (header_h - 1) screen_w 1 (Color.create 80 100 80 255);
   if s = "" then ()
   else begin
     let entries = String.split_on_char '|' s in
@@ -386,16 +419,22 @@ let draw_health () =
     else begin
       let heart_h = 36 in
       let heart_gap = 4 in
-      (* Determine max hearts any player has for block width calculation *)
-      let max_hearts = List.fold_left (fun acc (_, _, mx) -> max acc mx) 0 health_list in
+      let max_hearts = List.fold_left (fun acc (_, _, mx, _) -> max acc mx) 0 health_list in
       let name_w = 110 in
       let hearts_w = max_hearts * (heart_h + heart_gap) in
       let block_w = name_w + hearts_w + 20 in
       let divider_w = 2 in
       let total_w = n * block_w + (n - 1) * divider_w in
       let start_x = (screen_w - total_w) / 2 in
+      let equip_badge_color = function
+        | "UA"  -> Color.create 220 120 30 255
+        | "BHR" -> Color.create 150 60 200 255
+        | "UB"  -> Color.create 180 30 30 255
+        | "50"  -> Color.create 180 150 20 255
+        | _     -> Color.create 80 80 80 255
+      in
       List.iteri
-        (fun i (name, cur, mx) ->
+        (fun i (name, cur, mx, equips) ->
           let bx = start_x + i * (block_w + divider_w) in
           let by = (64 - heart_h) / 2 in
           draw_text name bx (by + 8) 18 Color.white;
@@ -416,8 +455,19 @@ let draw_health () =
                   (Vector2.create (float_of_int hx) (float_of_int by))
                   0.0 scale Color.white)
           done;
+          (* Equip badges in a row below the hearts/name zone *)
+          List.iteri
+            (fun ei tag ->
+              let badge_w = measure_text tag 10 + 6 in
+              let badge_x = bx + (ei * (badge_w + 3)) in
+              let badge_y = 66 in
+              draw_rectangle badge_x badge_y badge_w 16 (equip_badge_color tag);
+              draw_rectangle_lines badge_x badge_y badge_w 16
+                (Color.create 220 220 200 80);
+              draw_text tag (badge_x + 3) (badge_y + 3) 10 Color.white)
+            equips;
           if i < n - 1 then
-            draw_rectangle (bx + block_w) 4 divider_w 56
+            draw_rectangle (bx + block_w) 4 divider_w (header_h - 8)
               (Color.create 80 100 80 200))
         health_list
     end
@@ -677,14 +727,25 @@ let draw_card x y (c : Types.card) hovered =
 let is_attack_card (c : Types.card) =
   Rules.card_type_of_card c = Types.BasicAttack
 
+(* Cards that require choosing a target before sending the play command *)
+let needs_target_card (c : Types.card) =
+  match Rules.card_type_of_card c with
+  | Types.BasicAttack -> true
+  | Types.Special Types.Steal -> true
+  | Types.Special Types.Break -> true
+  | _ -> false
+
 (* Draw the player's hand along the bottom *)
 let draw_hand () =
   Mutex.lock view_mutex;
   let hand = view.hand in
   let waiting = view.waiting_for_input in
   let pending = view.pending_attack in
+  let choice = view.pending_choice in
+  let in_disc = view.in_discard_phase in
   Mutex.unlock view_mutex;
-  let interactive = waiting && pending = None in
+  (* Cards are only interactive when no overlay is open *)
+  let interactive = waiting && pending = None && choice = None in
   let mx = get_mouse_x () in
   let my = get_mouse_y () in
   let hovered_info = ref None in
@@ -692,34 +753,143 @@ let draw_hand () =
     (fun i card ->
       let x = 20 + (i * (card_w + card_spacing)) in
       let base_y = if waiting then hand_y else hand_y + 20 in
+      let selected = match choice with Some j -> j = i | None -> false in
       let hovered =
         interactive && mx >= x
         && mx <= x + card_w
         && my >= base_y
         && my <= base_y + card_h
       in
-      let y = if hovered then base_y - 12 else base_y in
+      let y = if hovered || selected then base_y - 12 else base_y in
       draw_card x y card hovered;
+      if selected then
+        draw_rectangle_lines x y card_w card_h (Color.create 80 180 255 255);
       if hovered then hovered_info := Some (card, x, y);
-      if hovered && is_mouse_button_pressed MouseButton.Left then
-        begin if is_attack_card card then begin
-          Mutex.lock view_mutex;
-          view.pending_attack <- Some i;
-          Mutex.unlock view_mutex
-        end
-        else begin
+      if hovered && is_mouse_button_pressed MouseButton.Left then begin
+        if in_disc then begin
           Mutex.lock q_mutex;
-          Queue.push (Printf.sprintf "play %d" i) outbound_q;
+          Queue.push (Printf.sprintf "discard %d" i) outbound_q;
           Mutex.unlock q_mutex;
           Mutex.lock view_mutex;
           view.waiting_for_input <- false;
+          view.hand <- remove_nth i view.hand;
+          Mutex.unlock view_mutex
+        end else begin
+          Mutex.lock view_mutex;
+          view.pending_choice <- Some i;
+          view.pending_choice_ready <- false;
           Mutex.unlock view_mutex
         end
-        end)
+      end)
     hand;
   match !hovered_info with
   | None -> ()
   | Some (card, cx, cy) -> draw_tooltip (card_description card) cx cy
+
+(* Play/Discard choice popup shown above a selected card *)
+let draw_card_choice_popup () =
+  Mutex.lock view_mutex;
+  let choice = view.pending_choice in
+  let ready = view.pending_choice_ready in
+  let hand = view.hand in
+  let waiting = view.waiting_for_input in
+  Mutex.unlock view_mutex;
+  match choice with
+  | None -> ()
+  | Some i when i >= List.length hand ->
+      Mutex.lock view_mutex;
+      view.pending_choice <- None;
+      Mutex.unlock view_mutex
+  | Some i ->
+      (* First frame after opening: mark ready and skip all click handling to
+         avoid the card-click that opened the popup from immediately closing it *)
+      if not ready then begin
+        Mutex.lock view_mutex;
+        view.pending_choice_ready <- true;
+        Mutex.unlock view_mutex
+      end else begin
+        let card = List.nth hand i in
+        let card_x = 20 + (i * (card_w + card_spacing)) in
+        let base_y = if waiting then hand_y else hand_y + 20 in
+        let btn_w = 100 in
+        let btn_h = 36 in
+        let gap = 6 in
+        let popup_w = btn_w + (gap * 2) in
+        let popup_h = (btn_h * 2) + (gap * 3) in
+        let popup_x = card_x + (card_w / 2) - (popup_w / 2) in
+        let popup_x = max 4 (min popup_x (screen_w - popup_w - 4)) in
+        let popup_y = base_y - 12 - popup_h - 8 in
+        let mx = get_mouse_x () in
+        let my = get_mouse_y () in
+        draw_rectangle popup_x popup_y popup_w popup_h (Color.create 20 20 20 220);
+        draw_rectangle_lines popup_x popup_y popup_w popup_h
+          (Color.create 180 160 80 255);
+        let play_x = popup_x + gap in
+        let play_y = popup_y + gap in
+        let play_hov =
+          mx >= play_x && mx <= play_x + btn_w
+          && my >= play_y && my <= play_y + btn_h
+        in
+        draw_rectangle play_x play_y btn_w btn_h
+          (if play_hov then Color.create 60 190 60 255
+           else Color.create 40 140 40 255);
+        draw_text "Play"
+          (play_x + (btn_w / 2) - (measure_text "Play" 18 / 2))
+          (play_y + 9) 18 Color.white;
+        let disc_x = popup_x + gap in
+        let disc_y = play_y + btn_h + gap in
+        let disc_hov =
+          mx >= disc_x && mx <= disc_x + btn_w
+          && my >= disc_y && my <= disc_y + btn_h
+        in
+        draw_rectangle disc_x disc_y btn_w btn_h
+          (if disc_hov then Color.create 200 80 30 255
+           else Color.create 150 55 20 255);
+        draw_text "Discard"
+          (disc_x + (btn_w / 2) - (measure_text "Discard" 18 / 2))
+          (disc_y + 9) 18 Color.white;
+        let in_popup =
+          mx >= popup_x && mx <= popup_x + popup_w
+          && my >= popup_y && my <= popup_y + popup_h
+        in
+        if is_mouse_button_pressed MouseButton.Left then begin
+          if play_hov then begin
+            if needs_target_card card then begin
+              Mutex.lock view_mutex;
+              view.pending_attack <- Some i;
+              view.pending_choice <- None;
+              Mutex.unlock view_mutex
+            end else begin
+              Mutex.lock q_mutex;
+              Queue.push (Printf.sprintf "play %d" i) outbound_q;
+              Mutex.unlock q_mutex;
+              Mutex.lock view_mutex;
+              view.waiting_for_input <- false;
+              view.pending_choice <- None;
+              view.hand <- remove_nth i view.hand;
+              Mutex.unlock view_mutex
+            end
+          end else if disc_hov then begin
+            Mutex.lock q_mutex;
+            Queue.push (Printf.sprintf "discard %d" i) outbound_q;
+            Mutex.unlock q_mutex;
+            Mutex.lock view_mutex;
+            view.waiting_for_input <- false;
+            view.pending_choice <- None;
+            view.hand <- remove_nth i view.hand;
+            Mutex.unlock view_mutex
+          end else if not in_popup then begin
+            Mutex.lock view_mutex;
+            view.pending_choice <- None;
+            Mutex.unlock view_mutex
+          end
+        end;
+        if is_key_pressed Key.Escape then begin
+          Mutex.lock view_mutex;
+          view.pending_choice <- None;
+          Mutex.unlock view_mutex
+        end
+      end
 
 (* Draw target selection overlay when an attack card has been clicked *)
 let draw_target_selection () =
@@ -757,6 +927,7 @@ let draw_target_selection () =
             Mutex.lock view_mutex;
             view.waiting_for_input <- false;
             view.pending_attack <- None;
+            view.hand <- remove_nth card_idx view.hand;
             Mutex.unlock view_mutex
           end)
         players;
@@ -818,6 +989,28 @@ let draw_prompt () =
       ((screen_w / 2) - 200)
       (screen_h - 30) 14
       (Color.create 220 200 100 255)
+
+let draw_game_over msg =
+  draw_rectangle 0 0 screen_w screen_h (Color.create 0 0 0 210);
+  let title = "GAME OVER" in
+  let title_sz = 80 in
+  draw_text title
+    ((screen_w - measure_text title title_sz) / 2)
+    ((screen_h / 2) - 120) title_sz
+    (Color.create 240 200 50 255);
+  draw_rectangle_lines
+    ((screen_w / 2) - 260) ((screen_h / 2) - 20) 520 2
+    (Color.create 180 150 40 180);
+  let msg_sz = 30 in
+  draw_text msg
+    ((screen_w - measure_text msg msg_sz) / 2)
+    ((screen_h / 2) + 10) msg_sz
+    Color.white;
+  let hint = "Close the window to exit" in
+  draw_text hint
+    ((screen_w - measure_text hint 16) / 2)
+    ((screen_h / 2) + 70) 16
+    (Color.create 140 140 140 255)
 
 (* ── Main entry point ── *)
 
@@ -1066,10 +1259,15 @@ let run_client_gui () =
         draw_health ();
         draw_log ();
         draw_hand ();
+        draw_card_choice_popup ();
         draw_action_buttons ();
         draw_prompt ();
         draw_attack_popup ();
-        draw_target_selection ());
+        draw_target_selection ()
+    | GameOver msg ->
+        draw_health ();
+        draw_log ();
+        draw_game_over msg);
 
     end_drawing ()
   done;

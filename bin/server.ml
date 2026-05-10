@@ -74,14 +74,27 @@ let find_player_by_name name (s : State.t) =
 
 (* ── Status display ── *)
 
-(* Broadcasts each player's current lives to everyone. *)
+let string_of_equips equips =
+  match equips with
+  | [] -> ""
+  | _ ->
+      let name_of = function
+        | Types.UnlimitedAttack -> "UA"
+        | Types.BlockHealReverse -> "BHR"
+        | Types.Unblockable -> "UB"
+        | Types.Random50 -> "50"
+      in
+      " {" ^ String.concat "," (List.map name_of equips) ^ "}"
+
+(* Broadcasts each player's current lives (and equips) to everyone. *)
 let broadcast_status () =
   let line =
     !game_state.State.players
     |> List.map (fun p ->
-        Printf.sprintf "%s: %d/%d%s" p.Player.name p.Player.lives
+        Printf.sprintf "%s: %d/%d%s%s" p.Player.name p.Player.lives
           p.Player.max_lives
-          (if Player.is_alive p then "" else " [dead]"))
+          (if Player.is_alive p then "" else " [dead]")
+          (string_of_equips p.Player.equips))
     |> String.concat " | "
   in
   broadcast_to_all ("Lives: " ^ line)
@@ -286,12 +299,18 @@ let rec discard_phase_loop = function
                     (Printf.sprintf
                        "Discard phase: %d card(s) over your limit.\n\
                         Your hand: %s\n\
-                        Enter index to discard: "
+                        > "
                        excess
                        (string_of_hand p.Player.hand))
                 in
                 let* line = Lwt_io.read_line cin in
-                begin match int_of_string_opt (String.trim line) with
+                let trimmed = String.trim line in
+                let idx_opt =
+                  match String.split_on_char ' ' trimmed with
+                  | [ "discard"; n ] -> int_of_string_opt n
+                  | _ -> int_of_string_opt trimmed
+                in
+                begin match idx_opt with
                 | None ->
                     let* () = send_to cout "! Enter a number." in
                     discard_phase_loop (pid :: rest)

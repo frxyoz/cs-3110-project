@@ -6,6 +6,7 @@ type screen =
   | NameEntry
   | Lobby
   | InGame
+  | GameOver of string
 
 val current_screen : screen ref
 
@@ -17,6 +18,9 @@ type game_view = {
   mutable prompt : string;
   mutable waiting_for_input : bool;
   mutable pending_attack : int option;
+  mutable pending_choice : int option;
+  mutable pending_choice_ready : bool;
+  mutable in_discard_phase : bool;
   mutable lobby_connected : int;
   mutable lobby_total : int;
   mutable lobby_ready : int;
@@ -45,7 +49,7 @@ val max_log_vis : int
 val heart_tex : Raylib.Texture2D.t option ref
 val emptyheart_tex : Raylib.Texture2D.t option ref
 val attack_popup_until : float ref
-val parse_health_entry : string -> (string * int * int) option
+val parse_health_entry : string -> (string * int * int * string list) option
 val draw_log : unit -> unit
 val draw_health : unit -> unit
 val draw_attack_popup : unit -> unit
@@ -59,8 +63,11 @@ val draw_suit_symbol :
 val rank_str : Cs_3110_project.Types.card -> string
 val draw_card : int -> int -> Cs_3110_project.Types.card -> bool -> unit
 val is_attack_card : Cs_3110_project.Types.card -> bool
+val needs_target_card : Cs_3110_project.Types.card -> bool
 val draw_hand : unit -> unit
+val draw_card_choice_popup : unit -> unit
 val draw_target_selection : unit -> unit
 val draw_action_buttons : unit -> unit
 val draw_prompt : unit -> unit
+val draw_game_over : string -> unit
 val run_client_gui : unit -> unit
