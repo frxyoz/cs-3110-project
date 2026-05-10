@@ -17,6 +17,9 @@ type game_view = {
   mutable prompt : string;
   mutable waiting_for_input : bool;
   mutable pending_attack : int option;
+  mutable lobby_connected : int;
+  mutable lobby_total : int;
+  mutable lobby_ready : int;
 }
 
 val view : game_view

@@ -36,6 +36,9 @@ type game_view = {
   mutable prompt : string;
   mutable waiting_for_input : bool;
   mutable pending_attack : int option;
+  mutable lobby_connected : int;
+  mutable lobby_total : int;
+  mutable lobby_ready : int;
 }
 
 let view : game_view =
@@ -47,6 +50,9 @@ let view : game_view =
     prompt = "";
     waiting_for_input = false;
     pending_attack = None;
+    lobby_connected = 0;
+    lobby_total = 0;
+    lobby_ready = 0;
   }
 
 (* ── Card parsing ── *)
@@ -175,6 +181,21 @@ let network_thread_fn host port =
 
 (* ── Parsing server messages into view updates ── *)
 
+(* Extract (n, m) from the first "(n/m …)" pattern found in a line. *)
+let parse_counts_in_parens line =
+  try
+    let i = String.index line '(' in
+    let rest = String.sub line (i + 1) (String.length line - i - 1) in
+    let j = String.index rest '/' in
+    let n = int_of_string (String.trim (String.sub rest 0 j)) in
+    let rest2 = String.sub rest (j + 1) (String.length rest - j - 1) in
+    let k =
+      try String.index rest2 ' ' with Not_found -> String.index rest2 ')'
+    in
+    let m = int_of_string (String.trim (String.sub rest2 0 k)) in
+    Some (n, m)
+  with _ -> None
+
 let update_view_from_line line =
   Mutex.lock view_mutex;
   (* Append to log (keep last 20 lines) *)
@@ -236,8 +257,7 @@ let update_view_from_line line =
           | Some i -> Some (String.sub entry 0 i))
         entries
   end;
-  let contains_prompt s =
-    let needle = "> " in
+  let contains_substr needle s =
     let nl = String.length needle in
     let sl = String.length s in
     if sl < nl then false
@@ -248,11 +268,33 @@ let update_view_from_line line =
       done;
       !found
   in
-  if contains_prompt line then begin
+  if contains_substr "> " line then begin
     view.prompt <- line;
     view.waiting_for_input <- true;
     view.pending_attack <- None
   end;
+  (* "NAME joined! (N/M players)" *)
+  (if contains_substr "joined!" line then
+     match parse_counts_in_parens line with
+     | Some (n, m) ->
+         view.lobby_connected <- n;
+         view.lobby_total <- m
+     | None -> ());
+  (* "NAME is ready! (N/M ready)" *)
+  (if contains_substr "is ready!" line then
+     match parse_counts_in_parens line with
+     | Some (n, m) ->
+         view.lobby_ready <- n;
+         view.lobby_connected <- m
+     | None -> ());
+  (* "NAME left the lobby. (N/M players)" *)
+  (if contains_substr "left the lobby" line then
+     match parse_counts_in_parens line with
+     | Some (n, m) ->
+         view.lobby_connected <- n;
+         view.lobby_total <- m;
+         if view.lobby_ready > n then view.lobby_ready <- n
+     | None -> ());
   Mutex.unlock view_mutex
 
 (* ── Raylib rendering ── *)
@@ -652,8 +694,12 @@ let draw_prompt () =
 (* ── Main entry point ── *)
 
 let run_client_gui () =
-  init_window screen_w screen_h "Card Game";
+  init_window screen_w screen_h "OCCG";
   set_target_fps 60;
+
+  let logo_tex = load_texture "assets/occg.png" in
+  let tex_w = float_of_int (Texture2D.width logo_tex) in
+  let tex_h = float_of_int (Texture2D.height logo_tex) in
 
   (* Name entry state — typed before the network thread starts *)
   let name_buf = Buffer.create 32 in
@@ -671,47 +717,80 @@ let run_client_gui () =
       end
     in
     collect_keys ();
-    (* Also handle Enter via key press (for terminals that send KEY_ENTER) *)
     if is_key_pressed Key.Enter && Buffer.length name_buf > 0 then
       name_submitted := true;
-    (* Backspace *)
     if is_key_pressed Key.Backspace && Buffer.length name_buf > 0 then begin
       let s = Buffer.contents name_buf in
       Buffer.clear name_buf;
       Buffer.add_string name_buf (String.sub s 0 (String.length s - 1))
     end;
 
-    begin_drawing ();
-    clear_background (Color.create 34 85 34 255);
+    let t = get_time () in
+    let pulse = 1.0 +. (0.05 *. sin (t *. 2.5)) in
+    let target_w = 420.0 in
+    let scale = target_w /. tex_w *. pulse in
+    let drawn_w = tex_w *. scale in
+    let drawn_h = tex_h *. scale in
+    let img_x = (float_of_int screen_w -. drawn_w) /. 2.0 in
+    let img_y = 80.0 in
 
-    (* Title *)
-    draw_text "Card Game"
-      ((screen_w / 2) - 80)
-      ((screen_h / 2) - 120)
-      48
-      (Color.create 240 220 150 255);
+    let mx = get_mouse_x () in
+    let my = get_mouse_y () in
 
     (* Input box *)
-    let box_x = (screen_w / 2) - 160 in
-    let box_y = (screen_h / 2) - 20 in
-    draw_text "Enter your name:" box_x (box_y - 30) 20
+    let box_w = 320 in
+    let box_x = (screen_w / 2) - (box_w / 2) in
+    let box_y = int_of_float (img_y +. drawn_h) + 40 in
+
+    (* Connect button *)
+    let btn_w = 160 in
+    let btn_h = 48 in
+    let btn_x = (screen_w / 2) - (btn_w / 2) in
+    let btn_y = box_y + 60 in
+    let btn_hovered =
+      Buffer.length name_buf > 0
+      && mx >= btn_x
+      && mx <= btn_x + btn_w
+      && my >= btn_y
+      && my <= btn_y + btn_h
+    in
+    if btn_hovered && is_mouse_button_pressed MouseButton.Left then
+      name_submitted := true;
+
+    begin_drawing ();
+    clear_background (Color.create 26 145 26 255);
+
+    (* Pulsing logo *)
+    draw_texture_ex logo_tex (Vector2.create img_x img_y) 0.0 scale Color.white;
+
+    (* Name label *)
+    draw_text "Enter your name" box_x (box_y - 28) 18
       (Color.create 200 200 180 255);
-    draw_rectangle box_x box_y 320 44 (Color.create 245 245 235 255);
-    draw_rectangle_lines box_x box_y 320 44 (Color.create 200 160 0 255);
+
+    (* Input box *)
+    draw_rectangle box_x box_y box_w 44 (Color.create 245 245 235 255);
+    draw_rectangle_lines box_x box_y box_w 44 (Color.create 200 160 0 255);
     draw_text (Buffer.contents name_buf) (box_x + 10) (box_y + 12) 22
       (Color.create 20 20 20 255);
-    (* Blinking cursor *)
-    if int_of_float (get_time ()) mod 2 = 0 then
+    if int_of_float t mod 2 = 0 then
       draw_text "_"
         (box_x + 10 + measure_text (Buffer.contents name_buf) 22)
         (box_y + 12) 22
         (Color.create 100 100 80 255);
 
-    (* Hint *)
-    draw_text "Press Enter to connect"
-      ((screen_w / 2) - 110)
-      (box_y + 60) 16
-      (Color.create 160 160 140 255);
+    (* Connect button *)
+    let btn_col =
+      if not (Buffer.length name_buf > 0) then Color.create 60 80 60 255
+      else if btn_hovered then Color.create 80 200 80 255
+      else Color.create 50 160 50 255
+    in
+    draw_rectangle btn_x btn_y btn_w btn_h btn_col;
+    draw_rectangle_lines btn_x btn_y btn_w btn_h (Color.create 100 220 100 255);
+    let lbl = "Connect" in
+    let lbl_w = measure_text lbl 22 in
+    draw_text lbl
+      (btn_x + (btn_w / 2) - (lbl_w / 2))
+      (btn_y + 13) 22 Color.white;
 
     end_drawing ()
   done;
@@ -752,36 +831,107 @@ let run_client_gui () =
     (match !current_screen with
     | NameEntry -> () (* unreachable here *)
     | Lobby ->
-        (* Show the server log and a ready button *)
-        draw_log ();
-        draw_text "Waiting for players..."
-          ((screen_w / 2) - 120)
-          ((screen_h / 2) - 60)
-          24
-          (Color.create 240 220 150 255);
-
-        (* Ready button *)
-        let btn_x = (screen_w / 2) - 80 in
-        let btn_y = screen_h / 2 in
         let mx = get_mouse_x () in
         let my = get_mouse_y () in
-        let hovered =
-          mx >= btn_x && mx <= btn_x + 160 && my >= btn_y && my <= btn_y + 50
+        Mutex.lock view_mutex;
+        let connected = view.lobby_connected in
+        let total = view.lobby_total in
+        let n_ready = view.lobby_ready in
+        Mutex.unlock view_mutex;
+
+        (* Section header *)
+        draw_text "Lobby"
+          ((screen_w / 2) - (measure_text "Lobby" 36 / 2))
+          80 36
+          (Color.create 240 220 150 255);
+
+        (* Divider line *)
+        draw_rectangle
+          ((screen_w / 2) - 160)
+          128 320 2
+          (Color.create 100 120 80 255);
+
+        (* Player slots: draw one pip per max slot, filled for connected *)
+        let slot_r = 10 in
+        let slot_gap = 28 in
+        let n_slots = if total > 0 then total else 4 in
+        let total_slots_w =
+          (n_slots * (slot_r * 2)) + ((n_slots - 1) * (slot_gap - (slot_r * 2)))
         in
-        draw_rectangle btn_x btn_y 160 50
-          (if hovered then Color.create 60 180 60 255
-           else Color.create 40 140 40 255);
-        draw_text "Ready!" (btn_x + 45) (btn_y + 15) 22 Color.white;
-        if hovered && is_mouse_button_pressed MouseButton.Left then begin
+        let slot_start_x = (screen_w / 2) - (total_slots_w / 2) + slot_r in
+        let slot_y = 180 in
+        for i = 0 to n_slots - 1 do
+          let cx = slot_start_x + (i * slot_gap) in
+          let filled = i < connected in
+          draw_circle cx slot_y (float_of_int slot_r)
+            (if filled then Color.create 100 220 100 255
+             else Color.create 60 80 60 255);
+          draw_circle_lines cx slot_y (float_of_int slot_r)
+            (Color.create 120 160 100 255)
+        done;
+
+        (* Connected count *)
+        let conn_str =
+          if total > 0 then
+            Printf.sprintf "%d / %d players connected" connected total
+          else if connected > 0 then
+            Printf.sprintf "%d player%s connected" connected
+              (if connected = 1 then "" else "s")
+          else "Waiting for players to join..."
+        in
+        draw_text conn_str
+          ((screen_w / 2) - (measure_text conn_str 18 / 2))
+          210 18
+          (Color.create 180 210 180 255);
+
+        (* Ready count *)
+        let ready_str =
+          Printf.sprintf "%d / %d ready" n_ready
+            (if connected > 0 then connected else n_slots)
+        in
+        draw_text ready_str
+          ((screen_w / 2) - (measure_text ready_str 20 / 2))
+          248 20
+          (Color.create 240 220 150 255);
+
+        (* Ready pips *)
+        for i = 0 to (if connected > 0 then connected else n_slots) - 1 do
+          let cx = slot_start_x + (i * slot_gap) in
+          let is_ready = i < n_ready in
+          draw_circle cx 290
+            (float_of_int (slot_r - 2))
+            (if is_ready then Color.create 80 200 80 255
+             else Color.create 60 80 60 255);
+          draw_circle_lines cx 290
+            (float_of_int (slot_r - 2))
+            (Color.create 100 160 100 255)
+        done;
+
+        (* Ready Up button *)
+        let btn_w = 200 in
+        let btn_h = 54 in
+        let btn_x = (screen_w / 2) - (btn_w / 2) in
+        let btn_y = 360 in
+        let btn_hov =
+          mx >= btn_x
+          && mx <= btn_x + btn_w
+          && my >= btn_y
+          && my <= btn_y + btn_h
+        in
+        draw_rectangle btn_x btn_y btn_w btn_h
+          (if btn_hov then Color.create 60 190 60 255
+           else Color.create 40 150 40 255);
+        draw_rectangle_lines btn_x btn_y btn_w btn_h
+          (Color.create 100 230 100 255);
+        let rl = "Ready Up!" in
+        draw_text rl
+          (btn_x + (btn_w / 2) - (measure_text rl 24 / 2))
+          (btn_y + 15) 24 Color.white;
+        if btn_hov && is_mouse_button_pressed MouseButton.Left then begin
           Mutex.lock q_mutex;
           Queue.push "yes" outbound_q;
           Mutex.unlock q_mutex
-        end;
-
-        (* Also show "not ready" option *)
-        let no_x = (screen_w / 2) - 60 in
-        let no_y = btn_y + 65 in
-        draw_text "Not ready yet" no_x no_y 14 (Color.create 160 160 140 255)
+        end
     | InGame ->
         draw_log ();
         draw_status ();
