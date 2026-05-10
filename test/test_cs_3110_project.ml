@@ -267,6 +267,30 @@ let tests =
          ( "shuffle preserves deck size" >:: fun _ ->
            let shuffled = Deck.shuffle Deck.full_deck in
            assert_equal ~printer:string_of_int 54 (List.length shuffled) );
+         ( "decks_for_players: 1 player = 1 deck" >:: fun _ ->
+           assert_equal ~printer:string_of_int 54
+             (List.length (Deck.decks_for_players 1)) );
+         ( "decks_for_players: 3 players = 1 deck" >:: fun _ ->
+           assert_equal ~printer:string_of_int 54
+             (List.length (Deck.decks_for_players 3)) );
+         ( "decks_for_players: 4 players = 2 decks" >:: fun _ ->
+           assert_equal ~printer:string_of_int 108
+             (List.length (Deck.decks_for_players 4)) );
+         ( "decks_for_players: 6 players = 2 decks" >:: fun _ ->
+           assert_equal ~printer:string_of_int 108
+             (List.length (Deck.decks_for_players 6)) );
+         ( "start_game with 4 players uses 2 decks" >:: fun _ ->
+           let s = State.make () in
+           let s =
+             List.fold_left
+               (fun acc (id, name) ->
+                 add_or_fail (Player.make_player id name) acc)
+               s
+               [ (1, "A"); (2, "B"); (3, "C"); (4, "D") ]
+           in
+           let s = State.start_game s in
+           (* 4 players × 7 cards dealt = 28; 2 decks = 108 total; 108-28=80 *)
+           assert_equal ~printer:string_of_int 80 (List.length s.State.deck) );
          (* ── State ── *)
          ( "initial state has no players" >:: fun _ ->
            let s = State.make () in

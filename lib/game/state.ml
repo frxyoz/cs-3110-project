@@ -159,7 +159,9 @@ let clear_pending (s : t) : t =
 
 (* Shuffle the deck, deal 7 cards to each player, and begin the game. *)
 let start_game (s : t) : t =
-  let shuffled = Deck.shuffle Deck.full_deck in
+  let shuffled =
+    Deck.shuffle (Deck.decks_for_players (List.length s.players))
+  in
   let players, remaining_deck =
     List.fold_left
       (fun (ps, deck) p ->
@@ -363,10 +365,12 @@ let resolve_sayno (s : t) : t =
           | Some actor -> (
               match find_player target_id s' with
               | None -> s'
-              | Some target ->
-                  let equip_cards = List.map card_of_equip target.Player.equips in
+              | Some target -> (
+                  let equip_cards =
+                    List.map card_of_equip target.Player.equips
+                  in
                   let pool = target.Player.hand @ equip_cards in
-                  (match pool with
+                  match pool with
                   | [] -> s'
                   | _ ->
                       let idx = Random.int (List.length pool) in
@@ -388,10 +392,12 @@ let resolve_sayno (s : t) : t =
           | Some _ -> (
               match find_player target_id s' with
               | None -> s'
-              | Some target ->
-                  let equip_cards = List.map card_of_equip target.Player.equips in
+              | Some target -> (
+                  let equip_cards =
+                    List.map card_of_equip target.Player.equips
+                  in
                   let pool = target.Player.hand @ equip_cards in
-                  (match pool with
+                  match pool with
                   | [] -> s'
                   | _ ->
                       let idx = Random.int (List.length pool) in
